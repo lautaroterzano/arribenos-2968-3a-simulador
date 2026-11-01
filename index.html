@@ -23,6 +23,7 @@
 
     <div class="mode-tabs">
       <button class="mode-btn active" data-mode="3d">🧊 Maqueta 3D Interactiva</button>
+      <button class="mode-btn" data-mode="fpv">🧑‍🦲 1° Persona (Caminar)</button>
       <button class="mode-btn" data-mode="2d">📐 Plano 2D y Medidas</button>
       <button class="mode-btn" data-mode="studio">📸 Estudio s/ Fotos Reales</button>
       <button class="mode-btn" data-mode="ai">✨ Antes / Después (IA)</button>
@@ -60,12 +61,36 @@
       <!-- Barra Flotante de Cámaras por Ambiente -->
       <div class="cam-bar">
         <button class="btn btn-sm" data-cam="overview_3d">🏠 Vista General 3D</button>
+        <button class="btn btn-sm btn-primary" data-cam="fpv_walk" id="btnCamFpv">🧑‍🦲 1° Persona (Pelado)</button>
         <button class="btn btn-sm" data-cam="top_2d">📏 Planta 2D</button>
         <button class="btn btn-sm" data-cam="living">🛋️ Ir a Living</button>
         <button class="btn btn-sm" data-cam="oficina">💻 Ir a Oficina (Frente)</button>
         <button class="btn btn-sm" data-cam="habitacion">🛏️ Ir a Habitación</button>
         <button class="btn btn-sm" data-cam="cocina">🍳 Ir a Cocina</button>
         <button class="btn btn-sm" data-cam="bano">🚿 Ir a Baño</button>
+      </div>
+
+      <!-- Mira central y Barra de Herramientas de Primera Persona -->
+      <div class="fpv-crosshair" id="fpvCrosshair"></div>
+      <div class="fpv-hud-bar" id="fpvHudBar">
+        <div class="fpv-hud-row">
+          <span class="fpv-status-badge" id="fpvRoomBadge">🧑‍🦲 Caminando en: Living / Comedor</span>
+          <button class="btn btn-sm" id="btnFpvPerspective" title="Alternar entre ver desde los ojos (1° Persona) o ver al personaje calvo desde atrás (3° Persona)">
+            👁️ Vista: Ojos (1°P)
+          </button>
+          <button class="btn btn-sm" id="btnFpvCarry" title="Agarrar o soltar el mueble seleccionado para llevarlo caminando con las flechas (Tecla E)">
+            ✋ Llevar Mueble (E)
+          </button>
+          <button class="btn btn-sm" id="btnFpvPaintToggle" title="Activar/Desactivar pintar paredes al hacer clic sobre ellas">
+            🖌️ Pintar Pared al Clic: OFF
+          </button>
+          <div class="fpv-mini-swatches" id="fpvMiniSwatches" title="Elegí color rápido para pintar paredes en 1° persona"></div>
+          <label class="fpv-check-label" title="Chocar con las paredes y pasar por las puertas reales">
+            <input type="checkbox" id="chkFpvCollide" checked /> Colisión Paredes
+          </label>
+          <button class="btn btn-sm" id="btnExitFpv" title="Volver a la Vista General 3D (Esc)">🚪 Salir (Esc)</button>
+        </div>
+        <div class="fpv-toast" id="fpvToast"></div>
       </div>
 
       <!-- Inspector Flotante de Mueble Seleccionado + Distancias a Paredes -->
@@ -98,10 +123,11 @@
       </div>
 
       <!-- Ayuda rápida abajo a la izquierda -->
-      <div class="hud-help">
-        <span>🖱️ <b>Clic Izq. sobre Mueble:</b> Arrastrar y medir paso</span>
-        <span>⌨️ <b>Tecla R / Flechas:</b> Rotar 90° / Mover de a 5 cm</span>
-        <span>🔄 <b>Clic Izq. en Fondo / Rueda:</b> Orbitar y Zoom</span>
+      <div class="hud-help" id="hudHelp">
+        <span>⌨️ <b>Flechas (↑↓←→):</b> Caminar con el personaje calvo</span>
+        <span>🖱️ <b>Clic en Mueble:</b> Arrastrar (<b>R</b> rotar / <b>E</b> llevar)</span>
+        <span>🎨 <b>Clic en Pared:</b> Pintar pared (modo pintura)</span>
+        <span>👀 <b>Arrastrar Fondo:</b> Mirar alrededor / Orbitar</span>
       </div>
     </section>
 

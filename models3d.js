@@ -758,10 +758,211 @@ window.Models3D = (function () {
     return fixtures;
   }
 
+  // --------------------------------------------------------------------------
+  // 4. PERSONAJE HUMANO CALVO (AVATAR A ESCALA REAL 1.75m CON ANIMACIÓN)
+  // --------------------------------------------------------------------------
+  function createBaldAvatarMesh() {
+    const avatar = new THREE.Group();
+    avatar.name = "baldAvatar";
+
+    const skinMat = new THREE.MeshStandardMaterial({
+      color: 0xe2af8e,
+      roughness: 0.34, // Leve brillo natural en la calva
+      metalness: 0.04
+    });
+    const shirtMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      roughness: 0.72
+    });
+    const pantsMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.8
+    });
+    const shoeMat = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9,
+      roughness: 0.5
+    });
+    const darkDetailMat = new THREE.MeshStandardMaterial({
+      color: 0x27272a,
+      roughness: 0.6
+    });
+
+    // --- GRUPO CABEZA CALVA (se oculta en cámara 1° persona pura para no tapar la visión) ---
+    const headGroup = new THREE.Group();
+    headGroup.name = "avatarHead";
+    headGroup.position.set(0, 1.54, 0);
+
+    // Cuello
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.062, 0.10, 14), skinMat);
+    neck.position.set(0, -0.04, 0);
+    neck.castShadow = true;
+    headGroup.add(neck);
+
+    // Cráneo / Cabeza Calva (esfera estilizada sin pelo)
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.118, 24, 20), skinMat);
+    skull.scale.set(0.92, 1.08, 0.98);
+    skull.position.set(0, 0.08, 0);
+    skull.castShadow = true;
+    headGroup.add(skull);
+
+    // Orejas
+    [-0.108, 0.108].forEach((ex) => {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 10), skinMat);
+      ear.scale.set(0.45, 1.1, 0.75);
+      ear.position.set(ex, 0.075, 0.0);
+      headGroup.add(ear);
+    });
+
+    // Nariz (apunta hacia +Z local, que es el FRENTE del personaje)
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.045, 8), skinMat);
+    nose.rotation.x = Math.PI / 2;
+    nose.position.set(0, 0.075, 0.122);
+    headGroup.add(nose);
+
+    // Ojos y Cejas
+    const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    [-0.042, 0.042].forEach((ox) => {
+      const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 10), eyeWhiteMat);
+      sclera.position.set(ox, 0.098, 0.103);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), pupilMat);
+      pupil.position.set(ox, 0.098, 0.116);
+      const brow = makeBox(0.034, 0.008, 0.012, 0x3f2e21, 0.8);
+      brow.position.set(ox, 0.122, 0.108);
+      headGroup.add(sclera, pupil, brow);
+    });
+
+    // Barba candado sutil / boca para darle expresión
+    const beard = makeBox(0.056, 0.028, 0.02, 0x3f2e21, 0.85);
+    beard.position.set(0, 0.025, 0.102);
+    headGroup.add(beard);
+
+    avatar.add(headGroup);
+
+    // --- TORSO Y HOMBROS ---
+    const torsoGroup = new THREE.Group();
+    torsoGroup.name = "avatarTorso";
+    const chest = makeBox(0.36, 0.48, 0.21, 0x0284c7, 0.72);
+    chest.position.set(0, 1.21, 0);
+    torsoGroup.add(chest);
+
+    // Cuello de remera blanca
+    const collar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.072, 0.078, 0.03, 14),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 })
+    );
+    collar.position.set(0, 1.455, 0);
+    torsoGroup.add(collar);
+
+    // Cintura / Cadera
+    const pelvis = makeBox(0.34, 0.12, 0.20, 0x1e293b, 0.8);
+    pelvis.position.set(0, 0.92, 0);
+    torsoGroup.add(pelvis);
+    avatar.add(torsoGroup);
+
+    // --- BRAZOS ARTICULADOS (Izquierdo = +X, Derecho = -X) ---
+    function createArm(sideSign) {
+      const pivot = new THREE.Group();
+      pivot.position.set(sideSign * 0.225, 1.41, 0);
+
+      const sleeve = makeBox(0.09, 0.20, 0.095, 0x0284c7, 0.72);
+      sleeve.position.set(0, -0.08, 0);
+      pivot.add(sleeve);
+
+      const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.032, 0.28, 10), skinMat);
+      forearm.position.set(0, -0.30, 0);
+      forearm.castShadow = true;
+      pivot.add(forearm);
+
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 10), skinMat);
+      hand.position.set(0, -0.45, 0.01);
+      pivot.add(hand);
+
+      return pivot;
+    }
+
+    const leftArmPivot = createArm(1);
+    const rightArmPivot = createArm(-1);
+    avatar.add(leftArmPivot, rightArmPivot);
+
+    // --- PIERNAS ARTICULADAS ---
+    function createLeg(sideSign) {
+      const pivot = new THREE.Group();
+      pivot.position.set(sideSign * 0.095, 0.86, 0);
+
+      const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.052, 0.78, 12), pantsMat);
+      legMesh.position.set(0, -0.39, 0);
+      legMesh.castShadow = true;
+      pivot.add(legMesh);
+
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.075, 0.22), shoeMat);
+      shoe.position.set(0, -0.81, 0.035);
+      shoe.castShadow = true;
+      pivot.add(shoe);
+
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.114, 0.02, 0.225), darkDetailMat);
+      sole.position.set(0, -0.845, 0.035);
+      pivot.add(sole);
+
+      return pivot;
+    }
+
+    const leftLegPivot = createLeg(1);
+    const rightLegPivot = createLeg(-1);
+    avatar.add(leftLegPivot, rightLegPivot);
+
+    // --- ANILLO INDICADOR EN EL PISO Y CONO DE MIRADA (Visible en 3D/2D) ---
+    const floorIndicator = new THREE.Group();
+    floorIndicator.name = "avatarFloorIndicator";
+    const ringGeo = new THREE.RingGeometry(0.24, 0.30, 28);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.015;
+    floorIndicator.add(ring);
+
+    const arrowGeo = new THREE.ConeGeometry(0.08, 0.18, 4);
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+    arrow.rotation.x = Math.PI / 2;
+    arrow.position.set(0, 0.03, 0.36);
+    floorIndicator.add(arrow);
+    avatar.add(floorIndicator);
+
+    // Hitbox invisible para arrastrar o hacer clic sobre el personaje en 3D/2D
+    const hitGeo = new THREE.BoxGeometry(0.50, 1.78, 0.40);
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitbox = new THREE.Mesh(hitGeo, hitMat);
+    hitbox.position.set(0, 0.89, 0);
+    hitbox.userData.isAvatar = true;
+    avatar.add(hitbox);
+
+    avatar.userData = {
+      isAvatar: true,
+      parts: {
+        headGroup,
+        torsoGroup,
+        leftArmPivot,
+        rightArmPivot,
+        leftLegPivot,
+        rightLegPivot,
+        floorIndicator
+      }
+    };
+
+    return avatar;
+  }
+
   return {
     createFloorTexture,
     createWallMaterial,
     createFurnitureMesh,
-    buildFixedFixtures
+    buildFixedFixtures,
+    createBaldAvatarMesh
   };
 })();

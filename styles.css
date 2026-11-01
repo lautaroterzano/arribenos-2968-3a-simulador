@@ -495,6 +495,138 @@ body {
   color: var(--text-main);
 }
 
+/* First-Person View (FPV) Crosshair & HUD Bar */
+.fpv-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 12;
+  display: none;
+}
+
+.fpv-crosshair.visible {
+  display: block;
+}
+
+.fpv-crosshair::before,
+.fpv-crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(56, 189, 248, 0.85);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+}
+
+.fpv-crosshair::before {
+  top: 6px;
+  left: 0;
+  width: 14px;
+  height: 2px;
+}
+
+.fpv-crosshair::after {
+  top: 0;
+  left: 6px;
+  width: 2px;
+  height: 14px;
+}
+
+.fpv-hud-bar {
+  position: absolute;
+  top: 56px;
+  left: 14px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 14;
+  max-width: calc(100% - 28px);
+}
+
+.fpv-hud-bar.visible {
+  display: flex;
+}
+
+.fpv-hud-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  background: rgba(15, 17, 23, 0.92);
+  backdrop-filter: blur(10px);
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.fpv-status-badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+  padding: 3px 8px;
+  background: rgba(56, 189, 248, 0.12);
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.fpv-mini-swatches {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.fpv-mini-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+
+.fpv-mini-dot:hover {
+  transform: scale(1.15);
+}
+
+.fpv-mini-dot.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent);
+  transform: scale(1.12);
+}
+
+.fpv-check-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.fpv-toast {
+  align-self: flex-start;
+  background: rgba(2, 132, 199, 0.92);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 7px;
+  display: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.fpv-toast.visible {
+  display: inline-block;
+}
+
 /* Photo Studio & AI Renders Overlays */
 .overlay-view {
   position: absolute;

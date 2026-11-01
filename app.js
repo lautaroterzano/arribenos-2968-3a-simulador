@@ -39,7 +39,20 @@
     // Estado de Muebles, Paredes y Pisos
     furniture: {},
     walls: {},
-    floors: {}
+    floors: {},
+
+    // Estado del Personaje Humano Calvo (1° y 3° Persona)
+    avatar: {
+      x: 3.45,
+      z: 0.72,
+      yaw: 1.05, // Radianes (0 = mira al Sur +Z, PI/2 = mira al Este +X)
+      pitch: -0.04,
+      walkPhase: 0,
+      isMoving: false,
+      thirdPerson: false, // false = 1° persona (ojos), true = 3° persona detrás del pelado
+      collideWalls: true,
+      carryingFurnitureId: null
+    }
   };
 
   // Inicializar estado desde DATA o LocalStorage
@@ -119,13 +132,16 @@
   }
 
   // ==========================================================================
-  // ESCENA THREE.JS (3D Y 2D ORTOGRÁFICO)
+  // ESCENA THREE.JS (3D, 1° PERSONA Y 2D ORTOGRÁFICO)
   // ==========================================================================
-  let scene, renderer, perspCam, orthoCam, activeCam, controls;
-  let floorGroup, wallGroup, curtainGroup, furnitureGroup, dimGroup, ledGroup, blueprintMesh;
+  let scene, renderer, perspCam, orthoCam, fpvCam, activeCam, controls;
+  let floorGroup, ceilingGroup, wallGroup, curtainGroup, furnitureGroup, dimGroup, ledGroup, blueprintMesh, avatarMesh;
   let sunLight, ambientLight, roomLights = [];
   const furnitureMeshes = {};
   const wallMeshes = {};
+  const keysPressed = {};
+  let lastFrameTime = performance.now();
+  let toastTimeout = null;
 
   function initThree() {
     const canvas = document.getElementById("canvas3d");
@@ -140,6 +156,9 @@
 
     perspCam = new THREE.PerspectiveCamera(48, aspect, 0.1, 100);
     perspCam.position.set(3.6, 8.8, 11.2);
+
+    // Cámara de Primera Persona (FOV humano amplio de 68° y plano cercano 0.08m)
+    fpvCam = new THREE.PerspectiveCamera(68, aspect, 0.08, 45);
 
     const frustumSize = 10.2;
     orthoCam = new THREE.OrthographicCamera(
@@ -175,16 +194,22 @@
 
     // Grupos de la escena
     floorGroup = new THREE.Group();
+    ceilingGroup = new THREE.Group();
+    ceilingGroup.visible = false; // Solo visible al caminar adentro en 1° persona
     wallGroup = new THREE.Group();
     curtainGroup = new THREE.Group();
     furnitureGroup = new THREE.Group();
     dimGroup = new THREE.Group();
     ledGroup = new THREE.Group();
 
-    scene.add(floorGroup, wallGroup, curtainGroup, furnitureGroup, dimGroup, ledGroup);
+    scene.add(floorGroup, ceilingGroup, wallGroup, curtainGroup, furnitureGroup, dimGroup, ledGroup);
 
     // Equipamiento fijo (Cocina, Baño, Placard empotrado, Ventiladores de techo)
     scene.add(M3D.buildFixedFixtures());
+
+    // Personaje Humano Calvo a escala real (1.75 m)
+    avatarMesh = M3D.createBaldAvatarMesh();
+    scene.add(avatarMesh);
 
     // Grilla exterior de referencia (1 cuadro = 1 metro)
     const grid = new THREE.GridHelper(16, 16, 0x1e293b, 0x151c28);
@@ -193,10 +218,12 @@
 
     setupLights();
     buildFloors();
+    buildCeilings();
     buildBlueprintOverlay();
     buildWallsAndWindows();
     rebuildAllFurnitureMeshes();
     updateLightingAndCurtains();
+    updateAvatarAndCamera();
     updateSelectionVisuals();
 
     window.addEventListener("resize", onWindowResize);
@@ -267,6 +294,23 @@
       labelMesh.rotation.x = -Math.PI / 2;
       labelMesh.position.set(r.labelPos.x, 0.006, r.labelPos.z);
       floorGroup.add(labelMesh);
+    });
+  }
+
+  function buildCeilings() {
+    while (ceilingGroup.children.length) ceilingGroup.remove(ceilingGroup.children[0]);
+    const ceilH = DATA.apartmentInfo.ceilingHeight || 2.65;
+    const ceilMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.9,
+      side: THREE.DoubleSide
+    });
+    DATA.rooms.forEach((r) => {
+      const geo = new THREE.PlaneGeometry(r.w + 0.1, r.d + 0.1);
+      const mesh = new THREE.Mesh(geo, ceilMat);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.set(r.x + r.w / 2, ceilH, r.z + r.d / 2);
+      ceilingGroup.add(mesh);
     });
   }
 
@@ -420,8 +464,8 @@
               new THREE.BoxGeometry(opLen * 0.9, doorH * 0.96, 0.035),
               new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.65 })
             );
-            panel.position.set(op.start + 0.05, doorH / 2, opLen * 0.42);
-            panel.rotation.y = Math.PI / 2.4; // Puerta semi-abierta
+            panel.position.set(op.start + 0.04, doorH / 2, opLen * 0.44);
+            panel.rotation.y = Math.PI / 1.92; // Puerta abierta a 94° para dejar libre el paso en 1° persona
             singleWallGroup.add(panel);
           }
 
@@ -781,6 +825,16 @@
     const extraWrap = document.getElementById("inspExtraActions");
     extraWrap.innerHTML = "";
 
+    // Botón para que el personaje calvo agarre / suelte el mueble y lo lleve caminando
+    const isCarryingThis = state.avatar.carryingFurnitureId === def.id;
+    const btnCarry = document.createElement("button");
+    btnCarry.className = `btn btn-sm ${isCarryingThis ? "btn-primary" : ""}`;
+    btnCarry.textContent = isCarryingThis ? "📥 Soltar Mueble (E)" : "✋ Llevar con Personaje (E)";
+    btnCarry.onclick = () => {
+      toggleCarrySelectedFurniture();
+    };
+    extraWrap.appendChild(btnCarry);
+
     if (def.isExtensible) {
       const btnExt = document.createElement("button");
       btnExt.className = "btn btn-sm btn-primary";
@@ -810,7 +864,381 @@
   }
 
   // ==========================================================================
-  // INTERACCIÓN CON EL MOUSE EN EL VIEWPORT 3D / 2D (ARRASTRAR Y PINTAR)
+  // PERSONAJE HUMANO CALVO: CAMINATA CON FLECHAS, COLISIONES Y 1° PERSONA
+  // ==========================================================================
+  function showFpvToast(msg) {
+    const el = document.getElementById("fpvToast");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("visible");
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+      el.classList.remove("visible");
+    }, 2600);
+  }
+
+  function updateFpvHudUI() {
+    const isFpv = state.viewMode === "fpv";
+    const crosshair = document.getElementById("fpvCrosshair");
+    const hudBar = document.getElementById("fpvHudBar");
+    const btnCamFpv = document.getElementById("btnCamFpv");
+
+    if (crosshair) crosshair.classList.toggle("visible", isFpv);
+    if (hudBar) hudBar.classList.toggle("visible", isFpv);
+    if (btnCamFpv) {
+      btnCamFpv.textContent = isFpv ? "🧑‍🦲 En 1° Persona (Activo)" : "🧑‍🦲 1° Persona (Pelado)";
+    }
+
+    const room = findContainingRoom(state.avatar.x, state.avatar.z);
+    const roomBadge = document.getElementById("fpvRoomBadge");
+    if (roomBadge && room) {
+      roomBadge.textContent = `🧑‍🦲 ${room.name}`;
+    }
+
+    const btnPersp = document.getElementById("btnFpvPerspective");
+    if (btnPersp) {
+      btnPersp.textContent = state.avatar.thirdPerson
+        ? "🧍 Vista: 3° Persona (Ver Pelado)"
+        : "👁️ Vista: Ojos (1° Persona)";
+    }
+
+    const btnCarry = document.getElementById("btnFpvCarry");
+    if (btnCarry) {
+      const carrying = state.avatar.carryingFurnitureId;
+      if (carrying) {
+        const cDef = DATA.furnitureCatalog.find((c) => c.id === carrying);
+        btnCarry.className = "btn btn-sm btn-primary";
+        btnCarry.textContent = `📥 Soltar ${cDef ? cDef.name.split(" ")[0] : "Mueble"} (E)`;
+      } else {
+        btnCarry.className = "btn btn-sm";
+        btnCarry.textContent = "✋ Llevar Mueble (E)";
+      }
+    }
+
+    const btnPaint = document.getElementById("btnFpvPaintToggle");
+    if (btnPaint) {
+      const paintOn = state.paintClickMode || state.sideTab === "pintura";
+      btnPaint.className = `btn btn-sm ${paintOn ? "btn-primary" : ""}`;
+      btnPaint.textContent = paintOn ? "🖌️ Pintar al Clic: ON" : "🖌️ Pintar al Clic: OFF";
+    }
+
+    const chkCollide = document.getElementById("chkFpvCollide");
+    if (chkCollide) {
+      chkCollide.checked = state.avatar.collideWalls;
+    }
+
+    // Mini paleta rápida en la barra de 1° persona
+    const miniWrap = document.getElementById("fpvMiniSwatches");
+    if (miniWrap && miniWrap.children.length === 0) {
+      DATA.paintSwatches.slice(0, 8).forEach((sw) => {
+        const dot = document.createElement("div");
+        dot.className = "fpv-mini-dot";
+        dot.style.background = sw.hex;
+        dot.title = `Pintar con ${sw.name}`;
+        dot.dataset.hex = sw.hex;
+        dot.onclick = () => {
+          state.activeSwatchHex = sw.hex;
+          state.paintClickMode = true;
+          updateFpvHudUI();
+          if (state.sideTab === "pintura") renderSidebar();
+          showFpvToast(`🎨 Color activo: ${sw.name} (Hacé clic en cualquier pared para pintarla)`);
+        };
+        miniWrap.appendChild(dot);
+      });
+    }
+    if (miniWrap) {
+      Array.from(miniWrap.children).forEach((dot) => {
+        dot.classList.toggle("active", dot.dataset.hex.toLowerCase() === state.activeSwatchHex.toLowerCase());
+      });
+    }
+  }
+
+  function toggleCarrySelectedFurniture() {
+    if (state.avatar.carryingFurnitureId) {
+      const droppedId = state.avatar.carryingFurnitureId;
+      state.avatar.carryingFurnitureId = null;
+      const def = DATA.furnitureCatalog.find((c) => c.id === droppedId);
+      showFpvToast(`📥 Mueble apoyado: ${def ? def.name.split("(")[0] : droppedId}`);
+      updateAvatarAndCamera();
+      updateSelectionVisuals();
+      updateFpvHudUI();
+      saveState();
+      return;
+    }
+
+    const selId = state.selectedFurnitureId;
+    if (!selId || !state.furniture[selId]) {
+      showFpvToast("👆 Primero hacé clic en un mueble para seleccionarlo");
+      return;
+    }
+    state.furniture[selId].visible = true;
+    if (furnitureMeshes[selId]) furnitureMeshes[selId].visible = true;
+    state.avatar.carryingFurnitureId = selId;
+    const def = DATA.furnitureCatalog.find((c) => c.id === selId);
+    showFpvToast(`✋ Llevando: ${def ? def.name.split("(")[0] : selId} — Caminá con las flechas y presioná E para soltar`);
+    updateCarriedFurniturePosition();
+    updateAvatarAndCamera();
+    updateSelectionVisuals();
+    updateFpvHudUI();
+  }
+
+  function updateCarriedFurniturePosition() {
+    const id = state.avatar.carryingFurnitureId;
+    if (!id || !state.furniture[id]) return;
+
+    const st = state.furniture[id];
+    const prevX = st.x;
+    const prevZ = st.z;
+
+    const holdDist = 1.25;
+    let nx = state.avatar.x + Math.sin(state.avatar.yaw) * holdDist;
+    let nz = state.avatar.z + Math.cos(state.avatar.yaw) * holdDist;
+
+    nx = Math.round(Math.max(0.25, Math.min(6.95, nx)) * 50) / 50;
+    nz = Math.round(Math.max(0.18, Math.min(8.45, nz)) * 50) / 50;
+
+    st.x = nx;
+    st.z = nz;
+
+    if (furnitureMeshes[id]) {
+      furnitureMeshes[id].position.set(nx, 0, nz);
+    }
+
+    if (id === "rack_tv" && state.linkTvToRack && state.furniture.tv_55) {
+      state.furniture.tv_55.x += nx - prevX;
+      state.furniture.tv_55.z += nz - prevZ;
+      if (furnitureMeshes.tv_55) {
+        furnitureMeshes.tv_55.position.set(state.furniture.tv_55.x, 0, state.furniture.tv_55.z);
+      }
+    }
+
+    updateSelectionVisuals();
+    updateLightingAndCurtains();
+  }
+
+  function closestPointOnSegment2D(px, pz, x1, z1, x2, z2) {
+    const dx = x2 - x1;
+    const dz = z2 - z1;
+    const lenSq = dx * dx + dz * dz;
+    if (lenSq < 1e-6) return { x: x1, z: z1 };
+    let t = ((px - x1) * dx + (pz - z1) * dz) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return { x: x1 + t * dx, z: z1 + t * dz };
+  }
+
+  function resolveAvatarCollision(nx, nz) {
+    // Límites perimetrales del departamento
+    nx = Math.max(0.24, Math.min(6.92, nx));
+    nz = Math.max(0.22, Math.min(8.40, nz));
+
+    if (!state.avatar.collideWalls) {
+      return { x: nx, z: nz };
+    }
+
+    const avatarRadius = 0.19; // Permite pasar cómodo por puertas de 70-75 cm
+
+    // Iterar 2 pasadas para resolver esquinas suavemente (wall sliding)
+    for (let pass = 0; pass < 2; pass++) {
+      DATA.walls.forEach((w) => {
+        const dx = w.x2 - w.x1;
+        const dz = w.z2 - w.z1;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.01) return;
+        const ux = dx / len;
+        const uz = dz / len;
+        const minDist = (w.thickness || 0.12) / 2 + avatarRadius;
+
+        // Dividir la pared en tramos sólidos (las puertas tipo 'door' dejan hueco de paso)
+        const segments = [];
+        let cursor = 0;
+        if (w.openings && w.openings.length > 0) {
+          w.openings.forEach((op) => {
+            if (op.type === "door") {
+              if (op.start > cursor) segments.push([cursor, op.start]);
+              cursor = op.end;
+            }
+          });
+        }
+        if (cursor < len) segments.push([cursor, len]);
+
+        segments.forEach(([s0, s1]) => {
+          const sx1 = w.x1 + ux * s0;
+          const sz1 = w.z1 + uz * s0;
+          const sx2 = w.x1 + ux * s1;
+          const sz2 = w.z1 + uz * s1;
+
+          const cp = closestPointOnSegment2D(nx, nz, sx1, sz1, sx2, sz2);
+          const vx = nx - cp.x;
+          const vz = nz - cp.z;
+          const dist = Math.hypot(vx, vz);
+
+          if (dist < minDist) {
+            if (dist > 1e-5) {
+              const push = minDist - dist;
+              nx += (vx / dist) * push;
+              nz += (vz / dist) * push;
+            } else {
+              nx += -uz * minDist;
+              nz += ux * minDist;
+            }
+          }
+        });
+      });
+    }
+
+    return { x: nx, z: nz };
+  }
+
+  function updateAvatarAndCamera() {
+    if (!avatarMesh) return;
+    const av = state.avatar;
+
+    avatarMesh.position.set(av.x, 0, av.z);
+    avatarMesh.rotation.y = av.yaw;
+
+    const parts = avatarMesh.userData.parts;
+    if (parts) {
+      // Ocultar la cabeza solo cuando estamos en 1° persona pura (ojos) para no obstruir la cámara
+      const inPureFirstPerson = state.viewMode === "fpv" && !av.thirdPerson;
+      parts.headGroup.visible = !inPureFirstPerson;
+      parts.floorIndicator.visible = state.viewMode !== "fpv" || av.thirdPerson;
+
+      // Animación de piernas y brazos al caminar con las flechas
+      const swing = av.isMoving ? Math.sin(av.walkPhase) * 0.55 : 0;
+      parts.leftLegPivot.rotation.x = swing;
+      parts.rightLegPivot.rotation.x = -swing;
+
+      if (av.carryingFurnitureId) {
+        // Brazos levantados sosteniendo el mueble
+        parts.leftArmPivot.rotation.x = -1.15;
+        parts.rightArmPivot.rotation.x = -1.15;
+      } else {
+        parts.leftArmPivot.rotation.x = -swing * 0.75;
+        parts.rightArmPivot.rotation.x = swing * 0.75;
+      }
+    }
+
+    // Actualizar cámara de 1° / 3° persona
+    if (state.viewMode === "fpv") {
+      const fwdX = Math.sin(av.yaw);
+      const fwdZ = Math.cos(av.yaw);
+      const headBob = av.isMoving ? Math.sin(av.walkPhase * 2) * 0.016 : 0;
+
+      if (!av.thirdPerson) {
+        // Vista desde los ojos del personaje calvo (1.66 m de altura)
+        const eyeY = 1.66 + headBob;
+        fpvCam.position.set(av.x, eyeY, av.z);
+        const lookX = av.x + fwdX * Math.cos(av.pitch);
+        const lookY = eyeY + Math.sin(av.pitch);
+        const lookZ = av.z + fwdZ * Math.cos(av.pitch);
+        fpvCam.lookAt(lookX, lookY, lookZ);
+      } else {
+        // Vista 3° persona cercana (viendo la nuca calva del personaje mientras camina)
+        const camDist = 1.05;
+        const camPos = resolveAvatarCollision(av.x - fwdX * camDist, av.z - fwdZ * camDist);
+        const camY = 1.82 + headBob * 0.5;
+        fpvCam.position.set(camPos.x, camY, camPos.z);
+        const targetX = av.x + fwdX * 1.6;
+        const targetY = 1.48 + Math.sin(av.pitch) * 1.2;
+        const targetZ = av.z + fwdZ * 1.6;
+        fpvCam.lookAt(targetX, targetY, targetZ);
+      }
+    }
+  }
+
+  function updateAvatarMovement(dt) {
+    if (state.viewMode !== "fpv" && state.viewMode !== "3d" && state.viewMode !== "2d") return;
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+
+    const av = state.avatar;
+    const walkSpeed = 2.15; // Metros por segundo (paso humano natural)
+    const turnSpeed = 2.05; // Radianes por segundo al girar con flechas
+
+    let moved = false;
+    let turned = false;
+
+    if (state.viewMode === "fpv") {
+      // En 1° persona: Flecha Arriba/Abajo camina hacia adelante/atrás;
+      // Flecha Izquierda/Derecha gira la vista (o con Shift hace paso lateral).
+      // También soporta W/A/S/D.
+      const fwdInput =
+        (keysPressed["ArrowUp"] || keysPressed["KeyW"] ? 1 : 0) -
+        (keysPressed["ArrowDown"] || keysPressed["KeyS"] ? 1 : 0);
+
+      const shiftHeld = keysPressed["ShiftLeft"] || keysPressed["ShiftRight"];
+
+      let turnInput = 0;
+      let strafeInput = (keysPressed["KeyD"] ? 1 : 0) - (keysPressed["KeyA"] ? 1 : 0);
+
+      if (shiftHeld) {
+        strafeInput += (keysPressed["ArrowRight"] ? 1 : 0) - (keysPressed["ArrowLeft"] ? 1 : 0);
+      } else {
+        turnInput = (keysPressed["ArrowLeft"] ? 1 : 0) - (keysPressed["ArrowRight"] ? 1 : 0);
+      }
+
+      if (turnInput !== 0) {
+        av.yaw += turnInput * turnSpeed * dt;
+        turned = true;
+      }
+
+      if (fwdInput !== 0 || strafeInput !== 0) {
+        const fwdX = Math.sin(av.yaw);
+        const fwdZ = Math.cos(av.yaw);
+        // Vector derecha = (-cos(yaw), sin(yaw))
+        const rightX = -Math.cos(av.yaw);
+        const rightZ = Math.sin(av.yaw);
+
+        let moveX = fwdX * fwdInput + rightX * strafeInput;
+        let moveZ = fwdZ * fwdInput + rightZ * strafeInput;
+        const mag = Math.hypot(moveX, moveZ);
+        if (mag > 0.001) {
+          moveX = (moveX / mag) * walkSpeed * dt;
+          moveZ = (moveZ / mag) * walkSpeed * dt;
+          const resolved = resolveAvatarCollision(av.x + moveX, av.z + moveZ);
+          av.x = resolved.x;
+          av.z = resolved.z;
+          moved = true;
+        }
+      }
+    } else {
+      // En Vista Aérea 3D o Planta 2D: las flechas del teclado (sin Shift) también hacen caminar al personaje calvo por la casa
+      const shiftHeld = keysPressed["ShiftLeft"] || keysPressed["ShiftRight"];
+      if (!shiftHeld) {
+        const dirX = (keysPressed["ArrowRight"] ? 1 : 0) - (keysPressed["ArrowLeft"] ? 1 : 0);
+        const dirZ = (keysPressed["ArrowDown"] ? 1 : 0) - (keysPressed["ArrowUp"] ? 1 : 0);
+        if (dirX !== 0 || dirZ !== 0) {
+          const mag = Math.hypot(dirX, dirZ);
+          const stepX = (dirX / mag) * walkSpeed * dt;
+          const stepZ = (dirZ / mag) * walkSpeed * dt;
+          const resolved = resolveAvatarCollision(av.x + stepX, av.z + stepZ);
+          av.x = resolved.x;
+          av.z = resolved.z;
+          av.yaw = Math.atan2(dirX, dirZ);
+          moved = true;
+        }
+      }
+    }
+
+    av.isMoving = moved;
+    if (moved) {
+      av.walkPhase += dt * 9.5;
+    } else {
+      av.walkPhase = 0;
+    }
+
+    if (moved || turned) {
+      if (av.carryingFurnitureId) {
+        updateCarriedFurniturePosition();
+      }
+      updateAvatarAndCamera();
+      updateFpvHudUI();
+    } else if (state.viewMode === "fpv") {
+      updateAvatarAndCamera();
+    }
+  }
+
+  // ==========================================================================
+  // INTERACCIÓN CON EL MOUSE EN EL VIEWPORT 3D / 1° PERSONA / 2D
   // ==========================================================================
   function setupViewportInteractions(canvas) {
     const raycaster = new THREE.Raycaster();
@@ -819,6 +1247,12 @@
     const intersectPt = new THREE.Vector3();
 
     let isDraggingFurniture = false;
+    let isDraggingAvatar = false;
+    let isLookingFpv = false;
+    let lookLastX = 0;
+    let lookLastY = 0;
+    let pointerDownTravel = 0;
+    let dragFallbackDist = 2.2;
     let dragOffset = new THREE.Vector3();
 
     function updateMouseCoords(ev) {
@@ -827,32 +1261,101 @@
       mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
-    canvas.addEventListener("pointerdown", (ev) => {
-      if (ev.button !== 0) return;
-      updateMouseCoords(ev);
-      raycaster.setFromCamera(mouse, activeCam);
+    // Proyección segura al piso (incluso mirando cerca del horizonte en 1° persona)
+    function getFloorPointFromRay(ray, fallbackDist = 2.2) {
+      if (ray.direction.y < -0.04) {
+        if (ray.intersectPlane(dragPlane, intersectPt)) {
+          const distFromCam = Math.hypot(
+            intersectPt.x - activeCam.position.x,
+            intersectPt.z - activeCam.position.z
+          );
+          if (distFromCam <= 8.5) {
+            return intersectPt;
+          }
+        }
+      }
+      // Si el usuario apunta hacia el horizonte o arriba en 1° persona, proyectar a distancia controlada
+      const horizLen = Math.hypot(ray.direction.x, ray.direction.z) || 1;
+      intersectPt.set(
+        activeCam.position.x + (ray.direction.x / horizLen) * fallbackDist,
+        0,
+        activeCam.position.z + (ray.direction.z / horizLen) * fallbackDist
+      );
+      return intersectPt;
+    }
 
-      // 1. Si está activo el Modo Pintar Pared con Clic
-      if (state.paintClickMode || (state.sideTab === "pintura" && ev.shiftKey)) {
-        const wallHits = raycaster.intersectObjects(wallGroup.children, true);
-        if (wallHits.length > 0) {
-          let obj = wallHits[0].object;
-          while (obj && !obj.userData.wallId) obj = obj.parent;
-          if (obj && obj.userData.wallId) {
-            state.selectedWallId = obj.userData.wallId;
-            state.walls[state.selectedWallId] = {
+    function tryPaintWallAtMouse() {
+      raycaster.setFromCamera(mouse, activeCam);
+      const wallHits = raycaster.intersectObjects(wallGroup.children, true);
+      if (wallHits.length > 0) {
+        let obj = wallHits[0].object;
+        while (obj && !obj.userData.wallId) obj = obj.parent;
+        if (obj && obj.userData.wallId) {
+          const wId = obj.userData.wallId;
+          state.selectedWallId = wId;
+          const wDef = DATA.walls.find((w) => w.id === wId);
+
+          if (state.paintClickMode || state.sideTab === "pintura") {
+            state.walls[wId] = {
               color: state.activeSwatchHex,
               tex: state.activeWallTex
             };
             buildWallsAndWindows();
             renderSidebar();
             saveState();
-            return;
+            showFpvToast(`🎨 Pintada: ${wDef ? wDef.name : wId}`);
+            return true;
+          } else if (state.viewMode === "fpv") {
+            showFpvToast(
+              `🧱 ${wDef ? wDef.name : wId} — Activá "🖌️ Pintar al Clic" o elegí un color arriba para pintarla`
+            );
           }
         }
       }
+      return false;
+    }
 
-      // 2. Detectar clic sobre un mueble
+    canvas.addEventListener("contextmenu", (ev) => ev.preventDefault());
+
+    // Doble clic sobre el personaje calvo en 3D/2D entra directamente en 1° persona
+    canvas.addEventListener("dblclick", (ev) => {
+      if (state.viewMode === "fpv") return;
+      updateMouseCoords(ev);
+      raycaster.setFromCamera(mouse, activeCam);
+      if (avatarMesh) {
+        const avHits = raycaster.intersectObjects(avatarMesh.children, true);
+        if (avHits.length > 0) {
+          switchViewMode("fpv");
+          showFpvToast("🧑‍🦲 Entraste en 1° Persona — Usá las flechas del teclado para caminar");
+        }
+      }
+    });
+
+    canvas.addEventListener("pointerdown", (ev) => {
+      updateMouseCoords(ev);
+      raycaster.setFromCamera(mouse, activeCam);
+      pointerDownTravel = 0;
+      lookLastX = ev.clientX;
+      lookLastY = ev.clientY;
+
+      // Clic derecho en 1° persona siempre rota la mirada
+      if (ev.button === 2 && state.viewMode === "fpv") {
+        isLookingFpv = true;
+        return;
+      }
+      if (ev.button !== 0) return;
+
+      // 1. Detectar clic sobre el personaje calvo en vista 3D/2D para arrastrarlo
+      if (state.viewMode !== "fpv" && avatarMesh) {
+        const avHits = raycaster.intersectObjects(avatarMesh.children, true);
+        if (avHits.length > 0) {
+          isDraggingAvatar = true;
+          controls.enabled = false;
+          return;
+        }
+      }
+
+      // 2. Detectar clic sobre un mueble (tanto en 3D/2D como en 1° Persona)
       const furnHits = raycaster.intersectObjects(furnitureGroup.children, true);
       if (furnHits.length > 0) {
         let obj = furnHits[0].object;
@@ -861,33 +1364,69 @@
           const fId = obj.userData.furnitureId;
           state.selectedFurnitureId = fId;
           isDraggingFurniture = true;
-          controls.enabled = false;
+          if (state.viewMode !== "fpv") controls.enabled = false;
 
-          raycaster.ray.intersectPlane(dragPlane, intersectPt);
           const st = state.furniture[fId];
-          dragOffset.set(st.x - intersectPt.x, 0, st.z - intersectPt.z);
+          dragFallbackDist = Math.max(
+            0.8,
+            Math.min(6.0, Math.hypot(st.x - activeCam.position.x, st.z - activeCam.position.z))
+          );
+          const pt = getFloorPointFromRay(raycaster.ray, dragFallbackDist);
+          dragOffset.set(st.x - pt.x, 0, st.z - pt.z);
 
           updateSelectionVisuals();
           renderSidebar();
           return;
         }
       }
+
+      // 3. Si estamos en 1° Persona y hacemos clic en fondo/pared:
+      // Si arrastra el mouse, mira alrededor; si suelta sin arrastrar, pinta la pared
+      if (state.viewMode === "fpv") {
+        isLookingFpv = true;
+        return;
+      }
+
+      // 4. En 3D/2D: Si está activo el Modo Pintar Pared con Clic
+      if (state.paintClickMode || (state.sideTab === "pintura" && ev.shiftKey)) {
+        tryPaintWallAtMouse();
+      }
     });
 
     window.addEventListener("pointermove", (ev) => {
-      if (!isDraggingFurniture || !state.selectedFurnitureId) return;
-      updateMouseCoords(ev);
-      raycaster.setFromCamera(mouse, activeCam);
+      const dxPx = ev.clientX - lookLastX;
+      const dyPx = ev.clientY - lookLastY;
+      pointerDownTravel += Math.hypot(dxPx, dyPx);
+      lookLastX = ev.clientX;
+      lookLastY = ev.clientY;
 
-      if (raycaster.ray.intersectPlane(dragPlane, intersectPt)) {
+      // A) Arrastrar al personaje calvo en el plano 3D/2D
+      if (isDraggingAvatar) {
+        updateMouseCoords(ev);
+        raycaster.setFromCamera(mouse, activeCam);
+        if (raycaster.ray.intersectPlane(dragPlane, intersectPt)) {
+          const resolved = resolveAvatarCollision(intersectPt.x, intersectPt.z);
+          state.avatar.x = resolved.x;
+          state.avatar.z = resolved.z;
+          updateAvatarAndCamera();
+          updateFpvHudUI();
+        }
+        return;
+      }
+
+      // B) Arrastrar un mueble (funciona en 3D, 2D y 1° Persona)
+      if (isDraggingFurniture && state.selectedFurnitureId) {
+        updateMouseCoords(ev);
+        raycaster.setFromCamera(mouse, activeCam);
+
+        const pt = getFloorPointFromRay(raycaster.ray, dragFallbackDist);
         const id = state.selectedFurnitureId;
         const st = state.furniture[id];
         const prevX = st.x;
         const prevZ = st.z;
 
-        // Redondear a pasos de 2 cm (0.02 m) para precisión arquitectónica
-        let nx = Math.round((intersectPt.x + dragOffset.x) * 50) / 50;
-        let nz = Math.round((intersectPt.z + dragOffset.z) * 50) / 50;
+        let nx = Math.round((pt.x + dragOffset.x) * 50) / 50;
+        let nz = Math.round((pt.z + dragOffset.z) * 50) / 50;
 
         nx = Math.max(0.25, Math.min(6.95, nx));
         nz = Math.max(0.18, Math.min(8.45, nz));
@@ -899,7 +1438,6 @@
           furnitureMeshes[id].position.set(nx, 0, nz);
         }
 
-        // Si el usuario mueve el Rack de TV, mover la TV de 55" solidariamente
         if (id === "rack_tv" && state.linkTvToRack && state.furniture.tv_55) {
           state.furniture.tv_55.x += nx - prevX;
           state.furniture.tv_55.z += nz - prevZ;
@@ -910,36 +1448,101 @@
 
         updateSelectionVisuals();
         updateLightingAndCurtains();
+        return;
+      }
+
+      // C) Mirar alrededor con el mouse en 1° Persona
+      if (isLookingFpv && state.viewMode === "fpv") {
+        state.avatar.yaw -= dxPx * 0.0045;
+        state.avatar.pitch = Math.max(-1.1, Math.min(1.0, state.avatar.pitch - dyPx * 0.0040));
+        if (state.avatar.carryingFurnitureId) {
+          updateCarriedFurniturePosition();
+        }
+        updateAvatarAndCamera();
       }
     });
 
-    window.addEventListener("pointerup", () => {
+    window.addEventListener("pointerup", (ev) => {
+      if (isDraggingAvatar) {
+        isDraggingAvatar = false;
+        if (state.viewMode !== "fpv") controls.enabled = true;
+      }
       if (isDraggingFurniture) {
         isDraggingFurniture = false;
-        controls.enabled = true;
+        if (state.viewMode !== "fpv") controls.enabled = true;
         saveState();
+      }
+      if (isLookingFpv) {
+        isLookingFpv = false;
+        // Si fue un clic limpio (sin arrastrar la vista), pintar la pared apuntada
+        if (ev.button === 0 && pointerDownTravel < 6) {
+          updateMouseCoords(ev);
+          tryPaintWallAtMouse();
+        }
       }
     });
 
-    // Atajos de teclado (R = Rotar 90°, Flechas = Mover de a 5 cm, Supr = Ocultar)
+    // Control de teclado (Flechas para caminar, R para rotar mueble, E para agarrar/llevar mueble, V para alternar 1°/3° persona)
     window.addEventListener("keydown", (ev) => {
-      if (state.viewMode !== "3d" && state.viewMode !== "2d") return;
-      if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+      if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(ev.key)) {
+        if (state.viewMode === "fpv" || state.viewMode === "3d" || state.viewMode === "2d") {
+          ev.preventDefault();
+        }
+      }
+
+      keysPressed[ev.code] = true;
+      keysPressed[ev.key] = true;
+
+      if (state.viewMode !== "3d" && state.viewMode !== "2d" && state.viewMode !== "fpv") return;
+
+      if (ev.key === "e" || ev.key === "E") {
+        toggleCarrySelectedFurniture();
+        return;
+      }
+
+      if (ev.key === "v" || ev.key === "V") {
+        if (state.viewMode === "fpv") {
+          state.avatar.thirdPerson = !state.avatar.thirdPerson;
+          updateAvatarAndCamera();
+          updateFpvHudUI();
+        } else {
+          switchViewMode("fpv");
+        }
+        return;
+      }
+
+      if (ev.key === "Escape" && state.viewMode === "fpv") {
+        if (state.avatar.carryingFurnitureId) {
+          toggleCarrySelectedFurniture();
+        } else {
+          switchViewMode("3d");
+        }
+        return;
+      }
 
       const id = state.selectedFurnitureId;
       if (!id || !state.furniture[id]) return;
 
       if (ev.key === "r" || ev.key === "R") {
         rotateFurniture(id, 90);
-      } else if (ev.key === "ArrowUp") {
-        nudgeFurniture(id, 0, -0.05);
-      } else if (ev.key === "ArrowDown") {
-        nudgeFurniture(id, 0, 0.05);
-      } else if (ev.key === "ArrowLeft") {
-        nudgeFurniture(id, -0.05, 0);
-      } else if (ev.key === "ArrowRight") {
-        nudgeFurniture(id, 0.05, 0);
+      } else if (ev.shiftKey && state.viewMode !== "fpv") {
+        // Shift + Flechas en 3D/2D mueve el mueble seleccionado de a 5 cm
+        if (ev.key === "ArrowUp") nudgeFurniture(id, 0, -0.05);
+        else if (ev.key === "ArrowDown") nudgeFurniture(id, 0, 0.05);
+        else if (ev.key === "ArrowLeft") nudgeFurniture(id, -0.05, 0);
+        else if (ev.key === "ArrowRight") nudgeFurniture(id, 0.05, 0);
       }
+    });
+
+    window.addEventListener("keyup", (ev) => {
+      keysPressed[ev.code] = false;
+      keysPressed[ev.key] = false;
+    });
+
+    window.addEventListener("blur", () => {
+      Object.keys(keysPressed).forEach((k) => (keysPressed[k] = false));
     });
   }
 
@@ -983,6 +1586,10 @@
   // CÁMARAS RÁPIDAS Y VISTAS (3D / 2D / PRIMERA PERSONA POR AMBIENTE)
   // ==========================================================================
   function setCameraView(targetRoomId) {
+    if (targetRoomId === "fpv_walk") {
+      switchViewMode("fpv");
+      return;
+    }
     if (targetRoomId === "overview_3d") {
       switchViewMode("3d");
       perspCam.position.set(3.6, 8.8, 11.2);
@@ -997,6 +1604,19 @@
 
     const r = DATA.rooms.find((rm) => rm.id === targetRoomId);
     if (!r) return;
+
+    // Ubicar también al personaje calvo en ese ambiente mirando hacia el centro del cuarto
+    state.avatar.x = r.camPos.x;
+    state.avatar.z = r.camPos.z;
+    state.avatar.yaw = Math.atan2(r.camTarget.x - r.camPos.x, r.camTarget.z - r.camPos.z);
+    state.avatar.pitch = -0.05;
+    updateAvatarAndCamera();
+    updateFpvHudUI();
+
+    if (state.viewMode === "fpv") {
+      showFpvToast(`📍 Caminando en: ${r.name}`);
+      return;
+    }
 
     switchViewMode("3d");
     perspCam.position.set(r.camPos.x, r.camPos.y, r.camPos.z);
@@ -1013,27 +1633,52 @@
     document.getElementById("studioOverlay").classList.toggle("active", mode === "studio");
     document.getElementById("aiOverlay").classList.toggle("active", mode === "ai");
 
-    if (mode === "2d") {
+    if (ceilingGroup) {
+      ceilingGroup.visible = mode === "fpv";
+    }
+
+    if (mode === "fpv") {
+      activeCam = fpvCam;
+      controls.enabled = false;
+      if (state.wallHeightMode !== "normal") {
+        state.wallHeightMode = "normal";
+        buildWallsAndWindows();
+      }
+      updateAvatarAndCamera();
+      updateFpvHudUI();
+      renderSidebar();
+    } else if (mode === "2d") {
       activeCam = orthoCam;
       controls.object = orthoCam;
+      controls.enabled = true;
       controls.enableRotate = false;
       orthoCam.position.set(3.6, 15, 4.3);
       orthoCam.lookAt(3.6, 0, 4.3);
       controls.target.set(3.6, 0, 4.3);
       state.wallHeightMode = "low";
       buildWallsAndWindows();
+      updateAvatarAndCamera();
+      updateFpvHudUI();
       controls.update();
+      renderSidebar();
     } else if (mode === "3d") {
       activeCam = perspCam;
       controls.object = perspCam;
+      controls.enabled = true;
       controls.enableRotate = true;
       if (state.wallHeightMode === "low") {
         state.wallHeightMode = "normal";
         buildWallsAndWindows();
       }
+      updateAvatarAndCamera();
+      updateFpvHudUI();
       controls.update();
+      renderSidebar();
     } else if (mode === "studio") {
+      updateFpvHudUI();
       renderPhotoStudio();
+    } else {
+      updateFpvHudUI();
     }
   }
 
@@ -1048,6 +1693,9 @@
     perspCam.aspect = aspect;
     perspCam.updateProjectionMatrix();
 
+    fpvCam.aspect = aspect;
+    fpvCam.updateProjectionMatrix();
+
     const frustumSize = 10.2;
     orthoCam.left = (-frustumSize * aspect) / 2;
     orthoCam.right = (frustumSize * aspect) / 2;
@@ -1060,8 +1708,15 @@
 
   function animate() {
     requestAnimationFrame(animate);
-    if (state.viewMode === "3d" || state.viewMode === "2d") {
-      controls.update();
+    const now = performance.now();
+    const dt = Math.min(0.08, (now - lastFrameTime) / 1000);
+    lastFrameTime = now;
+
+    if (state.viewMode === "3d" || state.viewMode === "2d" || state.viewMode === "fpv") {
+      updateAvatarMovement(dt);
+      if (state.viewMode !== "fpv") {
+        controls.update();
+      }
       renderer.render(scene, activeCam);
     }
   }
@@ -1083,6 +1738,44 @@
   }
 
   function renderFurnitureTab(container) {
+    // Card de Control Rápido del Personaje Calvo (1° Persona)
+    const avatarBox = document.createElement("div");
+    avatarBox.className = "control-group";
+    avatarBox.style.borderColor = "var(--accent)";
+    const currentRoom = findContainingRoom(state.avatar.x, state.avatar.z);
+    const isFpv = state.viewMode === "fpv";
+    avatarBox.innerHTML = `
+      <div class="section-title">
+        <span>🧑‍🦲 Personaje Humano Calvo (1.75 m)</span>
+        <span style="color:var(--accent);text-transform:none;">📍 ${currentRoom ? currentRoom.name : "Living"}</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-muted);line-height:1.35;">
+        Caminá con las <b>Flechas del Teclado (↑↓←→)</b>. Desde 1° persona podés <b>arrastrar muebles</b> con el mouse, presionar <b>E</b> para llevarlos caminando y <b>hacer clic en paredes</b> para pintarlas.
+      </div>
+      <div style="display:flex;gap:6px;margin-top:2px;">
+        <button class="btn btn-sm ${isFpv ? "btn-primary" : ""}" id="btnSideToggleFpv" style="flex:1;justify-content:center;">
+          ${isFpv ? "🏠 Volver a Vista Aérea 3D" : "🧑‍🦲 Entrar en 1° Persona"}
+        </button>
+        <button class="btn btn-sm" id="btnSideToggle3rd" style="justify-content:center;" title="Ver desde los ojos o detrás del pelado">
+          ${state.avatar.thirdPerson ? "🧍 3°P" : "👁️ 1°P"}
+        </button>
+      </div>
+    `;
+    container.appendChild(avatarBox);
+
+    avatarBox.querySelector("#btnSideToggleFpv").onclick = () => {
+      switchViewMode(state.viewMode === "fpv" ? "3d" : "fpv");
+    };
+    avatarBox.querySelector("#btnSideToggle3rd").onclick = () => {
+      state.avatar.thirdPerson = !state.avatar.thirdPerson;
+      if (state.viewMode !== "fpv") switchViewMode("fpv");
+      else {
+        updateAvatarAndCamera();
+        updateFpvHudUI();
+        renderSidebar();
+      }
+    };
+
     const topBox = document.createElement("div");
     topBox.className = "control-group";
     topBox.innerHTML = `
@@ -1093,7 +1786,7 @@
         </label>
       </div>
       <div style="font-size:11.5px;color:var(--text-muted);line-height:1.35;">
-        Arrastrá cualquier mueble en el plano 3D/2D. Presioná <b>R</b> para rotarlo 90° y mirá abajo a la derecha los centímetros libres.
+        Arrastrá cualquier mueble en 3D, 2D o 1° Persona. Presioná <b>R</b> para rotarlo 90° o <b>E</b> para llevarlo caminando.
       </div>
     `;
     container.appendChild(topBox);
@@ -1807,6 +2500,59 @@
       renderSidebar();
       saveState();
     };
+
+    // Botones de la Barra Flotante de Primera Persona (FPV HUD)
+    const btnFpvPerspective = document.getElementById("btnFpvPerspective");
+    if (btnFpvPerspective) {
+      btnFpvPerspective.onclick = () => {
+        state.avatar.thirdPerson = !state.avatar.thirdPerson;
+        updateAvatarAndCamera();
+        updateFpvHudUI();
+        renderSidebar();
+      };
+    }
+
+    const btnFpvCarry = document.getElementById("btnFpvCarry");
+    if (btnFpvCarry) {
+      btnFpvCarry.onclick = () => {
+        toggleCarrySelectedFurniture();
+      };
+    }
+
+    const btnFpvPaintToggle = document.getElementById("btnFpvPaintToggle");
+    if (btnFpvPaintToggle) {
+      btnFpvPaintToggle.onclick = () => {
+        state.paintClickMode = !state.paintClickMode;
+        updateFpvHudUI();
+        renderSidebar();
+        showFpvToast(
+          state.paintClickMode
+            ? "🖌️ Modo Pintar Pared ACTIVADO: Hacé clic sobre cualquier pared para pintarla"
+            : "🖐️ Modo Pintar Pared DESACTIVADO"
+        );
+      };
+    }
+
+    const chkFpvCollide = document.getElementById("chkFpvCollide");
+    if (chkFpvCollide) {
+      chkFpvCollide.onchange = (e) => {
+        state.avatar.collideWalls = e.target.checked;
+        showFpvToast(
+          state.avatar.collideWalls
+            ? "🧱 Colisión con paredes activada (pasás por las puertas)"
+            : "👻 Modo atravesar paredes activado"
+        );
+      };
+    }
+
+    const btnExitFpv = document.getElementById("btnExitFpv");
+    if (btnExitFpv) {
+      btnExitFpv.onclick = () => {
+        switchViewMode("3d");
+      };
+    }
+
+    updateFpvHudUI();
 
     // Botón Captura de Pantalla PNG
     document.getElementById("btnScreenshot").addEventListener("click", () => {
