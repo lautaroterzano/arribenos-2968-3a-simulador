@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador 3D/2D & Estudio IA — Arribeños 2968 3°A (UF 8)</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- BARRA SUPERIOR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">3A</div>
+      <div>
+        <div class="brand-title">Arribeños 2968 — Piso 3° A (UF 8 · 54.66 m²)</div>
+        <div class="brand-sub">Simulador a Escala Real (Plano + Tus Muebles + Pintura + Luces + Renders IA)</div>
+      </div>
+    </div>
+
+    <div class="mode-tabs">
+      <button class="mode-btn active" data-mode="3d">🧊 Maqueta 3D Interactiva</button>
+      <button class="mode-btn" data-mode="2d">📐 Plano 2D y Medidas</button>
+      <button class="mode-btn" data-mode="studio">📸 Estudio s/ Fotos Reales</button>
+      <button class="mode-btn" data-mode="ai">✨ Antes / Después (IA)</button>
+    </div>
+
+    <div class="top-actions">
+      <select id="presetSelect" class="preset-select" title="Cambiar distribución de muebles">
+        <option value="preset_1">Diseño 1 (Rec.): Dormitorio Interno + Oficina al Frente</option>
+        <option value="preset_2">Diseño 2: Dormitorio al Frente + Oficina Interna</option>
+        <option value="preset_3">Diseño 3: Living Invertido + Comedor Integrado</option>
+      </select>
+      <button class="btn" id="btnToggleWalls" title="Alternar altura de paredes (Altas / Medias / Bajas)">🧱 Paredes</button>
+      <button class="btn" id="btnToggleBlueprint" title="Superponer imagen del Plano Oficial UF 8 en el piso">🗺️ Plano UF8</button>
+      <button class="btn btn-primary" id="btnScreenshot" title="Guardar imagen PNG de tu diseño">📷 Captura</button>
+    </div>
+  </header>
+
+  <!-- ÁREA DE TRABAJO PRINCIPAL -->
+  <main class="workspace">
+
+    <!-- PANEL LATERAL IZQUIERDO -->
+    <aside class="sidebar">
+      <nav class="sidebar-nav">
+        <button class="side-tab active" data-tab="muebles">🛋️ Muebles</button>
+        <button class="side-tab" data-tab="pintura">🎨 Pintura</button>
+        <button class="side-tab" data-tab="luces">💡 Luces/Cort.</button>
+      </nav>
+      <div class="sidebar-content" id="sidebarContent"></div>
+    </aside>
+
+    <!-- VIEWPORT 3D / 2D -->
+    <section class="viewport-area">
+      <canvas id="canvas3d"></canvas>
+
+      <!-- Barra Flotante de Cámaras por Ambiente -->
+      <div class="cam-bar">
+        <button class="btn btn-sm" data-cam="overview_3d">🏠 Vista General 3D</button>
+        <button class="btn btn-sm" data-cam="top_2d">📏 Planta 2D</button>
+        <button class="btn btn-sm" data-cam="living">🛋️ Ir a Living</button>
+        <button class="btn btn-sm" data-cam="oficina">💻 Ir a Oficina (Frente)</button>
+        <button class="btn btn-sm" data-cam="habitacion">🛏️ Ir a Habitación</button>
+        <button class="btn btn-sm" data-cam="cocina">🍳 Ir a Cocina</button>
+        <button class="btn btn-sm" data-cam="bano">🚿 Ir a Baño</button>
+      </div>
+
+      <!-- Inspector Flotante de Mueble Seleccionado + Distancias a Paredes -->
+      <div class="inspector-card visible" id="inspectorCard">
+        <div class="inspector-header">
+          <img id="inspThumb" class="inspector-thumb" src="depto_actual/WhatsApp Image 2026-10-31 at 17.44.00.jpeg" alt="Mueble" />
+          <div style="flex:1;min-width:0;">
+            <div id="inspName" style="font-size:13px;font-weight:700;">Mueble Seleccionado</div>
+            <div id="inspDims" style="font-size:11px;color:var(--accent);margin-top:2px;">192 × 30 × 80 cm</div>
+          </div>
+        </div>
+
+        <div style="font-size:10.5px;text-transform:uppercase;color:var(--text-muted);font-weight:700;">
+          📐 Espacio Libre alrededor (Centímetros Reales)
+        </div>
+        <div class="clearance-grid">
+          <div class="clearance-item" id="clearN"><span>↑ Norte:</span> <span>-- cm</span></div>
+          <div class="clearance-item" id="clearS"><span>↓ Sur:</span> <span>-- cm</span></div>
+          <div class="clearance-item" id="clearW"><span>← Oeste:</span> <span>-- cm</span></div>
+          <div class="clearance-item" id="clearE"><span>→ Este:</span> <span>-- cm</span></div>
+        </div>
+
+        <div style="display:flex;gap:6px;flex-wrap:wrap;" id="inspExtraActions"></div>
+
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-sm" id="btnInspRotL" style="flex:1;justify-content:center;">↺ Rotar -90°</button>
+          <button class="btn btn-sm" id="btnInspRotR" style="flex:1;justify-content:center;">↻ Rotar +90° (R)</button>
+          <button class="btn btn-sm" id="btnInspHide" style="justify-content:center;">🚫 Ocultar</button>
+        </div>
+      </div>
+
+      <!-- Ayuda rápida abajo a la izquierda -->
+      <div class="hud-help">
+        <span>🖱️ <b>Clic Izq. sobre Mueble:</b> Arrastrar y medir paso</span>
+        <span>⌨️ <b>Tecla R / Flechas:</b> Rotar 90° / Mover de a 5 cm</span>
+        <span>🔄 <b>Clic Izq. en Fondo / Rueda:</b> Orbitar y Zoom</span>
+      </div>
+    </section>
+
+    <!-- OVERLAY 1: ESTUDIO FOTOGRÁFICO REAL 2.5D -->
+    <section class="overlay-view" id="studioOverlay">
+      <div class="studio-layout">
+        <div class="studio-sidebar">
+          <div class="control-group">
+            <div class="section-title">1. Elegí la Foto Real del Depto Nuevo</div>
+            <select id="studioSceneSelect" class="preset-select" style="width:100%;"></select>
+          </div>
+
+          <div class="control-group">
+            <div class="section-title">
+              <span>2. Pintar Pared Individual en la Foto</span>
+              <button class="btn btn-sm" id="btnClearStudioWall">Blanco Orig.</button>
+            </div>
+            <select id="studioWallSelect" class="preset-select" style="width:100%;margin-bottom:6px;"></select>
+            <div class="swatch-grid" id="studioSwatchGrid"></div>
+          </div>
+
+          <div class="control-group">
+            <div class="section-title">3. Cortinas y Tiras LED s/ Foto</div>
+            <div class="control-row">
+              <span>Bajar Cortina Roller:</span>
+              <input type="range" id="rngStudioRoller" min="0" max="100" value="35" />
+            </div>
+            <label class="control-row">
+              <input type="checkbox" id="chkStudioLinen" checked /> Cortinas de Lino a los lados
+            </label>
+            <label class="control-row">
+              <input type="checkbox" id="chkStudioLed" checked /> Encender Tiras LED Cálidas
+            </label>
+          </div>
+
+          <div class="control-group">
+            <div class="section-title">
+              <span>4. Superponer Fotos de Tus Muebles</span>
+              <button class="btn btn-sm" id="btnClearStickers">Limpiar</button>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">
+              Hacé clic para agregar tus muebles sobre la foto y arrastralos con el mouse:
+            </div>
+            <div id="studioFurnitureStickers" style="display:flex;flex-direction:column;gap:5px;"></div>
+          </div>
+        </div>
+
+        <div class="studio-stage">
+          <canvas id="photoCanvas"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- OVERLAY 2: COMPARADOR ANTES / DESPUÉS CON RENDERS IA FOTORREALISTAS -->
+    <section class="overlay-view" id="aiOverlay">
+      <div class="ai-gallery-container">
+        <div class="studio-sidebar">
+          <div class="control-group">
+            <div class="section-title">Ambientes Renderizados con IA</div>
+            <div id="aiRoomButtons" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <div class="control-group">
+            <div id="aiRenderTitle" style="font-size:14px;font-weight:700;color:var(--accent);"></div>
+            <div id="aiRenderSub" style="font-size:12px;color:var(--text-muted);line-height:1.4;"></div>
+          </div>
+
+          <div class="control-group">
+            <div class="section-title">Verificación de Medidas Reales</div>
+            <ul id="aiRenderMetrics" style="list-style:none;font-size:12px;line-height:1.45;color:var(--text-main);"></ul>
+          </div>
+        </div>
+
+        <div class="studio-stage">
+          <div class="ba-slider-wrap" id="baSliderWrap">
+            <img id="baBeforeImg" class="ba-img" src="depto_nuevo/living 1.webp" alt="Antes (Vacío)" />
+            <div class="ba-after-clip" id="baAfterClip">
+              <img id="baAfterImg" class="ba-img" src="renders_ia/render_living.jpg" alt="Después (Amueblado con tus muebles)" />
+            </div>
+            <div class="ba-badge" style="left:14px;">ANTES (Depto Nuevo Vacío)</div>
+            <div class="ba-badge" style="right:14px;background:rgba(2,132,199,0.9);">DESPUÉS (Con Tus Muebles + Cortinas + LED)</div>
+            <div class="ba-handle" id="baHandle"></div>
+          </div>
+          <div style="margin-top:12px;font-size:12.5px;color:var(--text-muted);">
+            ↔ Deslizá la barra central hacia izquierda o derecha para comparar la foto original vacía con el render de tus muebles instalados.
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- LIBRERÍAS THREE.JS + DATOS Y LÓGICA LOCAL (100% COMPATIBLE CON DOBLE CLIC EN WINDOWS) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="data.js"></script>
+  <script src="models3d.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
