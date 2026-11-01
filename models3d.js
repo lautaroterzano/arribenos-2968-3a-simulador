@@ -638,6 +638,54 @@ window.Models3D = (function () {
         break;
       }
 
+      case "heladera_gris": {
+        // Heladera Gris Acero Inox con Freezer superior (66 x 68 x 180 cm)
+        const bodyGrey = 0x7a828c;
+        const doorInox = 0x8d96a0;
+        const darkTrim = 0x27272a;
+
+        // Gabinete principal gris oscuro/medio
+        const cabinet = makeBox(W, H - 0.03, D - 0.05, bodyGrey, 0.35, 0.45);
+        cabinet.position.set(0, (H - 0.03) / 2 + 0.03, -0.025);
+        group.add(cabinet);
+
+        // Zócalo inferior negro
+        const plinth = makeBox(W - 0.02, 0.03, D - 0.04, darkTrim, 0.6);
+        plinth.position.set(0, 0.015, -0.01);
+        group.add(plinth);
+
+        // Puerta inferior (Heladera) en el frente (+Z local)
+        const lowerH = 1.12;
+        const lowerDoor = makeBox(W - 0.01, lowerH, 0.045, doorInox, 0.28, 0.52);
+        lowerDoor.position.set(0, 0.03 + lowerH / 2, D / 2 - 0.022);
+        group.add(lowerDoor);
+
+        // Franja divisoria entre puertas (manija embutida)
+        const gapBar = makeBox(W - 0.01, 0.03, 0.04, darkTrim, 0.5, 0.3);
+        gapBar.position.set(0, 0.03 + lowerH + 0.015, D / 2 - 0.025);
+        group.add(gapBar);
+
+        // Puerta superior (Freezer)
+        const upperH = H - 0.03 - lowerH - 0.03;
+        const upperDoor = makeBox(W - 0.01, upperH, 0.045, doorInox, 0.28, 0.52);
+        upperDoor.position.set(0, H - upperH / 2, D / 2 - 0.022);
+        group.add(upperDoor);
+
+        // Manijas verticales cromadas en el lado izquierdo del frente
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0xdbe2ea, roughness: 0.2, metalness: 0.8 });
+        const handleLower = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.36, 0.03), handleMat);
+        handleLower.position.set(-W / 2 + 0.055, 0.88, D / 2 + 0.012);
+        const handleUpper = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.24, 0.03), handleMat);
+        handleUpper.position.set(-W / 2 + 0.055, 1.48, D / 2 + 0.012);
+        group.add(handleLower, handleUpper);
+
+        // Display digital sutil en la puerta del freezer
+        const display = makeBox(0.09, 0.14, 0.008, 0x1e293b, 0.2, 0.6);
+        display.position.set(0, 1.52, D / 2 + 0.002);
+        group.add(display);
+        break;
+      }
+
       default: {
         const box = makeBox(W, H, D, woodWarm, 0.65);
         box.position.set(0, elev + H / 2, 0);
@@ -680,33 +728,196 @@ window.Models3D = (function () {
     const fixtures = new THREE.Group();
     fixtures.name = "fixedFixtures";
 
-    // A) COCINA + LAVADERO (Pared Sur z = 3.60, de x = 0.05 a 3.05)
-    // Mesada gris y mueble bajo mesada blanco
-    const counter = makeBox(2.25, 0.85, 0.58, 0xf8fafc, 0.4);
-    counter.position.set(1.90, 0.425, 3.28);
-    const counterTop = makeBox(2.27, 0.04, 0.60, 0xcbd5e1, 0.3, 0.2);
-    counterTop.position.set(1.90, 0.86, 3.28);
-    fixtures.add(counter, counterTop);
+    // A) COCINA + LAVADERO DETALLADOS (Pared Sur z = 3.60, mirando hacia el Norte -Z)
+    // 1. Mueble Bajo Mesada Blanco (x = 1.66 a 2.98 -> ancho 1.32 m)
+    const cabW = 1.32;
+    const cabX = 2.32;
+    const cabZ = 3.26;
+    const counter = makeBox(cabW, 0.83, 0.58, 0xf8fafc, 0.45);
+    counter.position.set(cabX, 0.415, cabZ);
+    fixtures.add(counter);
 
-    // Cocina a gas negra 4 hornallas (como en cocina 1.webp)
-    const stove = makeBox(0.56, 0.86, 0.58, 0x18181b, 0.35, 0.4);
-    stove.position.set(1.12, 0.43, 3.28);
-    fixtures.add(stove);
+    // Zócalo oscuro bajo mesada
+    const cabPlinth = makeBox(cabW - 0.02, 0.06, 0.54, 0x1e293b, 0.7);
+    cabPlinth.position.set(cabX, 0.03, cabZ);
+    fixtures.add(cabPlinth);
 
-    // Calefón Orbis blanco en pared
+    // Puertas, cajones y manijas en el frente del bajo mesada (z = 2.965)
+    const seamMat = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+    const handleMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.7, roughness: 0.3 });
+    // Líneas divisorias verticales (2 puertas a la der/este + 2 columnas de cajones a la izq/oeste)
+    [1.98, 2.30, 2.64].forEach((sx) => {
+      const vSeam = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.74, 0.01), seamMat);
+      vSeam.position.set(sx, 0.44, 2.968);
+      fixtures.add(vSeam);
+    });
+    // Cajones horizontales y sus manijas (en x = 1.82 y x = 2.14)
+    [0.24, 0.42, 0.60, 0.74].forEach((sy) => {
+      const hSeam = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.006, 0.01), seamMat);
+      hSeam.position.set(1.98, sy, 2.968);
+      fixtures.add(hSeam);
+    });
+    [1.82, 2.14].forEach((cx) => {
+      [0.16, 0.33, 0.51, 0.68].forEach((cy) => {
+        const hnd = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.014, 0.025), handleMat);
+        hnd.position.set(cx, cy, 2.958);
+        fixtures.add(hnd);
+      });
+    });
+    // Manijas verticales de las 2 puertas bajo bacha
+    [2.58, 2.70].forEach((px) => {
+      const hnd = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.14, 0.025), handleMat);
+      hnd.position.set(px, 0.52, 2.958);
+      fixtures.add(hnd);
+    });
+
+    // 2. Mesada de Acero Inoxidable con Bacha Profunda + Tramo de Granito junto al horno
+    // Tramo de granito beige junto al horno (x = 1.66 a 2.00)
+    const graniteTop = makeBox(0.35, 0.04, 0.61, 0xd6cab8, 0.4, 0.1);
+    graniteTop.position.set(1.835, 0.85, cabZ);
+    const graniteBacksplash = makeBox(0.35, 0.06, 0.03, 0xd6cab8, 0.4, 0.1);
+    graniteBacksplash.position.set(1.835, 0.89, 3.53);
+    fixtures.add(graniteTop, graniteBacksplash);
+
+    // Mesada de acero inoxidable (x = 2.00 a 2.98, con hueco visual para la bacha en x = 2.48)
+    const inoxMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.25, metalness: 0.75 });
+    const sinkBasinMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.3, metalness: 0.8 });
+    const drainMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4, metalness: 0.9 });
+
+    // Bordes de mesada inox alrededor de la bacha
+    const inoxLeft = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.04, 0.61), inoxMat);
+    inoxLeft.position.set(2.12, 0.85, cabZ);
+    const inoxRight = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.61), inoxMat);
+    inoxRight.position.set(2.84, 0.85, cabZ);
+    const inoxFront = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.04, 0.11), inoxMat);
+    inoxFront.position.set(2.47, 0.85, 3.015);
+    const inoxBack = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.04, 0.12), inoxMat);
+    inoxBack.position.set(2.47, 0.85, 3.50);
+    const inoxSplash = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 0.025), inoxMat);
+    inoxSplash.position.set(2.49, 0.89, 3.53);
+    fixtures.add(inoxLeft, inoxRight, inoxFront, inoxBack, inoxSplash);
+
+    // Bacha (pileta de cocina hundida) + paredes internas + rejilla desagüe
+    const basinFloor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.02, 0.38), sinkBasinMat);
+    basinFloor.position.set(2.47, 0.72, 3.26);
+    const basinWallL = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.14, 0.38), sinkBasinMat);
+    basinWallL.position.set(2.25, 0.79, 3.26);
+    const basinWallR = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.14, 0.38), sinkBasinMat);
+    basinWallR.position.set(2.69, 0.79, 3.26);
+    const basinWallF = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.02), sinkBasinMat);
+    basinWallF.position.set(2.47, 0.79, 3.08);
+    const basinWallB = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.02), sinkBasinMat);
+    basinWallB.position.set(2.47, 0.79, 3.44);
+    const drain = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.025, 14), drainMat);
+    drain.position.set(2.47, 0.725, 3.26);
+    fixtures.add(basinFloor, basinWallL, basinWallR, basinWallF, basinWallB, drain);
+
+    // Grifería cromada en la pared sobre la bacha
+    const chromeMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.15, metalness: 0.9 });
+    const faucetBase = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.05), chromeMat);
+    faucetBase.position.set(2.47, 1.04, 3.51);
+    const faucetSpout = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.20, 10), chromeMat);
+    faucetSpout.rotation.x = Math.PI / 2.3;
+    faucetSpout.position.set(2.47, 1.07, 3.42);
+    const faucetTip = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.012, 0.05, 10), chromeMat);
+    faucetTip.position.set(2.47, 1.03, 3.33);
+    fixtures.add(faucetBase, faucetSpout, faucetTip);
+
+    // 3. Cocina / Horno a Gas Negro con 4 Hornallas, Perillas y Visor (x = 1.08 a 1.66)
+    const stoveX = 1.37;
+    const stoveZ = 3.26;
+    const stoveBody = makeBox(0.56, 0.85, 0.58, 0x18181b, 0.35, 0.35);
+    stoveBody.position.set(stoveX, 0.425, stoveZ);
+    // Plancha superior de acero inoxidable
+    const stoveTop = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.025, 0.58), inoxMat);
+    stoveTop.position.set(stoveX, 0.86, stoveZ);
+    // Respaldo metálico de la cocina
+    const stoveBackguard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.09, 0.03), inoxMat);
+    stoveBackguard.position.set(stoveX, 0.91, 3.53);
+    fixtures.add(stoveBody, stoveTop, stoveBackguard);
+
+    // 4 Hornallas con quemadores y rejillas negras arriba
+    const burnerMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.4, metalness: 0.6 });
+    const flameRingMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 });
+    [
+      [stoveX - 0.14, stoveZ - 0.13],
+      [stoveX + 0.14, stoveZ - 0.13],
+      [stoveX - 0.14, stoveZ + 0.12],
+      [stoveX + 0.14, stoveZ + 0.12]
+    ].forEach(([bx, bz]) => {
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.095, 0.018, 16), burnerMat);
+      ring.position.set(bx, 0.88, bz);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.026, 14), flameRingMat);
+      cap.position.set(bx, 0.886, bz);
+      // Cruz de la rejilla posapava
+      const grate1 = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.015, 0.015), burnerMat);
+      grate1.position.set(bx, 0.892, bz);
+      const grate2 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.015, 0.20), burnerMat);
+      grate2.position.set(bx, 0.892, bz);
+      fixtures.add(ring, cap, grate1, grate2);
+    });
+
+    // Pava metálica sobre una hornalla (como en la foto cocina 1)
+    const kettle = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 12), chromeMat);
+    kettle.scale.set(1, 0.82, 1);
+    kettle.position.set(stoveX - 0.14, 0.95, stoveZ - 0.13);
+    fixtures.add(kettle);
+
+    // Frente del Horno: Panel de 4 perillas + Manija + Ventana de vidrio del horno (en z = 2.965)
+    [-0.18, -0.08, 0.08, 0.18].forEach((kx) => {
+      const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.025, 12), burnerMat);
+      knob.rotation.x = Math.PI / 2;
+      knob.position.set(stoveX + kx, 0.79, 2.96);
+      fixtures.add(knob);
+    });
+    const ovenHandle = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.022, 0.035), chromeMat);
+    ovenHandle.position.set(stoveX, 0.70, 2.95);
+    const ovenGlass = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.38, 0.015),
+      new THREE.MeshStandardMaterial({
+        color: 0x291d12,
+        emissive: 0x3b2108,
+        roughness: 0.15,
+        metalness: 0.7
+      })
+    );
+    ovenGlass.position.set(stoveX, 0.44, 2.966);
+    const ovenFrame = makeBox(0.50, 0.52, 0.01, 0x090d16, 0.3, 0.5);
+    ovenFrame.position.set(stoveX, 0.45, 2.968);
+    fixtures.add(ovenFrame, ovenGlass, ovenHandle);
+
+    // 4. Estantes Flotantes Blancos sobre la mesada (como en cocina 1.webp)
+    [1.52, 1.82].forEach((sy) => {
+      const shelf = makeBox(1.85, 0.025, 0.24, 0xf8fafc, 0.5);
+      shelf.position.set(2.05, sy, 3.42);
+      fixtures.add(shelf);
+    });
+
+    // 5. Mueblecito auxiliar + Pileta de Lavar (Bacha de Lavadero) + Calefón Orbis + Lavarropas
+    const sideCab = makeBox(0.42, 0.78, 0.52, 0xf8fafc, 0.5);
+    sideCab.position.set(0.84, 0.39, 3.29);
+    fixtures.add(sideCab);
+
+    // Pileta de lavar blanca profunda en la esquina (x = 0.36, z = 3.29)
+    const laundrySink = makeBox(0.48, 0.32, 0.48, 0xf8fafc, 0.3);
+    laundrySink.position.set(0.36, 0.68, 3.29);
+    const laundryBasin = makeBox(0.38, 0.04, 0.38, 0xcbd5e1, 0.4);
+    laundryBasin.position.set(0.36, 0.83, 3.29);
+    fixtures.add(laundrySink, laundryBasin);
+
+    // Calefón Orbis blanco en pared Sur (arriba de la pileta de lavar)
     const heater = makeBox(0.38, 0.68, 0.24, 0xffffff, 0.3);
-    heater.position.set(0.35, 1.58, 3.44);
-    fixtures.add(heater);
+    heater.position.set(0.36, 1.58, 3.44);
+    const heaterPanel = makeBox(0.18, 0.14, 0.01, 0x334155, 0.4);
+    heaterPanel.position.set(0.36, 1.48, 3.318);
+    fixtures.add(heater, heaterPanel);
 
-    // Pileta de lavar + Espacio Lavarropas junto a la ventana (x = 0.35..0.82)
-    const washer = makeBox(0.58, 0.85, 0.58, 0xf1f5f9, 0.3);
-    washer.position.set(0.42, 0.425, 3.28);
-    fixtures.add(washer);
-
-    // Espacio Heladera en Cocina (x = 2.72, z = 1.45)
-    const fridge = makeBox(0.66, 1.78, 0.66, 0xe2e8f0, 0.25, 0.35);
-    fridge.position.set(2.70, 0.89, 1.42);
-    fixtures.add(fridge);
+    // Lavarropas carga superior junto a la ventana Oeste (x = 0.36, z = 2.62)
+    const washer = makeBox(0.56, 0.86, 0.58, 0xf1f5f9, 0.3);
+    washer.position.set(0.36, 0.43, 2.62);
+    const washerLid = makeBox(0.46, 0.02, 0.44, 0x94a3b8, 0.2, 0.4);
+    washerLid.position.set(0.36, 0.87, 2.62);
+    fixtures.add(washer, washerLid);
 
     // B) BAÑO COMPLETO (x = 1.08..3.23, z = 3.96..5.30)
     // Ducha a la izquierda + Inodoro + Bidet + Lavatorio

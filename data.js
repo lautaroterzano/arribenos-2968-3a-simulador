@@ -364,6 +364,14 @@ window.APP_DATA = {
       w: 195, d: 60, h: 240, elevation: 0,
       photo: "depto_nuevo/habitacion 2.webp",
       notes: "El placard de 3 puertas y baulera que ya está en la Habitación Interna (podés ocultarlo si decidís sacarlo)."
+    },
+    {
+      id: "heladera_gris",
+      name: "Heladera Gris Acero Inox c/ Freezer",
+      category: "Cocina",
+      w: 66, d: 68, h: 180, elevation: 0,
+      photo: "depto_nuevo/cocina 1.webp",
+      notes: "Heladera gris de 2 puertas (freezer superior) totalmente movible y rotable."
     }
   ],
 
@@ -404,7 +412,9 @@ window.APP_DATA = {
         mesita_luz:      { x: 3.55, z: 8.35, rot: 180, visible: true },
         rack_dorm:       { x: 4.00, z: 6.85, rot: 270, visible: true },
         perchero_negro:  { x: 1.38, z: 8.38, rot: 180, visible: true },
-        ventilador_pie:  { x: 1.45, z: 6.55, rot: 90,  visible: true }
+        ventilador_pie:  { x: 1.45, z: 6.55, rot: 90,  visible: true },
+        // COCINA
+        heladera_gris:   { x: 2.66, z: 1.48, rot: 270, visible: true }
       }
     },
 
@@ -436,7 +446,9 @@ window.APP_DATA = {
         silla_mesh_2:    { x: 3.08, z: 7.68, rot: 0,   visible: true },
         teclado_calma:   { x: 3.92, z: 6.85, rot: 270, visible: true },
         cubos_pared:     { x: 2.60, z: 8.48, rot: 180, visible: true },
-        carrito_plantas: { x: 1.35, z: 7.95, rot: 90,  visible: true }
+        carrito_plantas: { x: 1.35, z: 7.95, rot: 90,  visible: true },
+        // COCINA
+        heladera_gris:   { x: 2.66, z: 1.48, rot: 270, visible: true }
       }
     },
 
@@ -468,7 +480,9 @@ window.APP_DATA = {
         mesita_luz:      { x: 3.55, z: 8.35, rot: 180, visible: true },
         rack_dorm:       { x: 4.00, z: 6.85, rot: 270, visible: true },
         perchero_negro:  { x: 1.38, z: 8.38, rot: 180, visible: true },
-        ventilador_pie:  { x: 1.45, z: 6.55, rot: 90,  visible: true }
+        ventilador_pie:  { x: 1.45, z: 6.55, rot: 90,  visible: true },
+        // COCINA
+        heladera_gris:   { x: 2.66, z: 1.48, rot: 270, visible: true }
       }
     }
   },
