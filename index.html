@@ -30,14 +30,15 @@
     </div>
 
     <div class="top-actions">
-      <select id="presetSelect" class="preset-select" title="Cambiar distribución de muebles">
+      <select id="presetSelect" class="preset-select" title="Cambiar distribución de muebles o elegir uno de tus diseños guardados">
         <option value="preset_1">Diseño 1 (Rec.): Dormitorio Interno + Oficina al Frente</option>
         <option value="preset_2">Diseño 2: Dormitorio al Frente + Oficina Interna</option>
         <option value="preset_3">Diseño 3: Living Invertido + Comedor Integrado</option>
       </select>
+      <button class="btn btn-primary" id="btnOpenSaveModal" title="Guardar este diseño (muebles, pintura, pisos y luces) o gestionar tus diseños">💾 Guardar Diseño</button>
       <button class="btn" id="btnToggleWalls" title="Alternar altura de paredes (Altas / Medias / Bajas)">🧱 Paredes</button>
       <button class="btn" id="btnToggleBlueprint" title="Superponer imagen del Plano Oficial UF 8 en el piso">🗺️ Plano UF8</button>
-      <button class="btn btn-primary" id="btnScreenshot" title="Guardar imagen PNG de tu diseño">📷 Captura</button>
+      <button class="btn" id="btnScreenshot" title="Guardar imagen PNG de tu diseño">📷 Captura</button>
     </div>
   </header>
 
@@ -217,6 +218,73 @@
         </div>
       </div>
     </section>
+
+    <!-- MODAL: GUARDAR Y GESTIONAR MIS DISEÑOS -->
+    <div class="modal-backdrop" id="designsModal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <div style="font-size:15px;font-weight:700;">💾 Mis Diseños Guardados</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">
+              Guardá distintas combinaciones de muebles, colores de paredes, pisos e iluminación para compararlas cuando quieras.
+            </div>
+          </div>
+          <button class="btn btn-sm" id="btnCloseSaveModal">✕ Cerrar</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Crear nuevo diseño -->
+          <div class="control-group" style="border-color:var(--accent);">
+            <div class="section-title">
+              <span>➕ Guardar Estado Actual como Nuevo Diseño</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <input
+                type="text"
+                id="inpNewDesignName"
+                class="text-input"
+                placeholder="Ej: Living Verde + Escritorios en L..."
+                maxlength="60"
+              />
+              <button class="btn btn-primary" id="btnSaveNewDesign" style="white-space:nowrap;">💾 Guardar Nuevo</button>
+            </div>
+            <div id="overwriteActiveRow" style="display:none;margin-top:4px;padding-top:8px;border-top:1px solid var(--border);align-items:center;justify-content:space-between;gap:8px;">
+              <span style="font-size:12px;color:var(--text-muted);">Diseño activo: <b id="lblActiveCustomName" style="color:var(--accent);"></b></span>
+              <button class="btn btn-sm" id="btnOverwriteActiveDesign">🔄 Actualizar este diseño con mis cambios actuales</button>
+            </div>
+          </div>
+
+          <!-- Lista de diseños guardados por el usuario -->
+          <div class="control-group">
+            <div class="section-title">
+              <span>📂 Tus Diseños Guardados (<span id="savedDesignsCount">0</span>)</span>
+              <span style="font-size:10.5px;text-transform:none;font-weight:500;color:var(--text-muted);">También aparecen en el desplegable superior</span>
+            </div>
+            <div id="savedDesignsList" class="saved-designs-list"></div>
+          </div>
+
+          <!-- Compartir por Link o Respaldar en Archivo -->
+          <div class="control-group">
+            <div class="section-title">
+              <span>🔗 Compartir o Respaldar en Archivo</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              <button class="btn btn-sm" id="btnCopyShareLink" style="flex:1;justify-content:center;">
+                🔗 Copiar Link de mi Diseño Actual (WhatsApp / Celular)
+              </button>
+              <button class="btn btn-sm" id="btnExportDesignsJson" style="justify-content:center;">
+                ⬇️ Descargar Respaldo (.json)
+              </button>
+              <button class="btn btn-sm" id="btnImportDesignsJson" style="justify-content:center;">
+                ⬆️ Cargar Respaldo (.json)
+              </button>
+              <input type="file" id="fileImportDesigns" accept=".json" style="display:none;" />
+            </div>
+            <div id="modalFeedbackMsg" class="modal-feedback"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
   </main>
 

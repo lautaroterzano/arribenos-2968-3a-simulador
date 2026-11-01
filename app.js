@@ -36,10 +36,11 @@
     curtainOpenPct: 65, // 0 = cerrado, 100 = abierto
     curtainColor: "#ece7df",
 
-    // Estado de Muebles, Paredes y Pisos
+    // Estado de Muebles, Paredes, Pisos y Mis Diseños Guardados
     furniture: {},
     walls: {},
     floors: {},
+    customDesigns: [],
 
     // Estado del Personaje Humano Calvo (1° y 3° Persona)
     avatar: {
@@ -55,7 +56,101 @@
     }
   };
 
-  // Inicializar estado desde DATA o LocalStorage
+  function deepClone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  function formatTimestamp() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())} hs`;
+  }
+
+  function createSnapshotFromCurrentState(name, existingId = null) {
+    return {
+      id: existingId || "custom_" + Date.now(),
+      name: (name || "Mi Diseño").trim(),
+      updatedAt: formatTimestamp(),
+      furniture: deepClone(state.furniture),
+      walls: deepClone(state.walls),
+      floors: deepClone(state.floors),
+      lighting: {
+        timeOfDay: state.timeOfDay,
+        ceilingLightIntensity: state.ceilingLightIntensity,
+        ceilingLightTemp: state.ceilingLightTemp,
+        ledEnabled: deepClone(state.ledEnabled),
+        ledColor: state.ledColor,
+        curtainStyle: state.curtainStyle,
+        curtainOpenPct: state.curtainOpenPct,
+        curtainColor: state.curtainColor
+      },
+      avatar: {
+        x: state.avatar.x,
+        z: state.avatar.z,
+        yaw: state.avatar.yaw
+      }
+    };
+  }
+
+  function applySnapshotObject(snap, rebuild = true) {
+    if (!snap) return;
+    if (snap.furniture) {
+      DATA.furnitureCatalog.forEach((cat) => {
+        const sItem = snap.furniture[cat.id];
+        if (sItem) {
+          state.furniture[cat.id] = {
+            x: sItem.x,
+            z: sItem.z,
+            rot: sItem.rot || 0,
+            visible: sItem.visible !== false,
+            extended: !!sItem.extended,
+            showFlag: sItem.showFlag !== false
+          };
+        }
+      });
+    }
+    if (snap.walls) {
+      Object.assign(state.walls, deepClone(snap.walls));
+    }
+    if (snap.floors) {
+      Object.assign(state.floors, deepClone(snap.floors));
+    }
+    if (snap.lighting) {
+      const L = snap.lighting;
+      if (typeof L.timeOfDay === "number") state.timeOfDay = L.timeOfDay;
+      if (typeof L.ceilingLightIntensity === "number") state.ceilingLightIntensity = L.ceilingLightIntensity;
+      if (L.ceilingLightTemp) state.ceilingLightTemp = L.ceilingLightTemp;
+      if (L.ledEnabled) Object.assign(state.ledEnabled, L.ledEnabled);
+      if (L.ledColor) state.ledColor = L.ledColor;
+      if (L.curtainStyle) state.curtainStyle = L.curtainStyle;
+      if (typeof L.curtainOpenPct === "number") state.curtainOpenPct = L.curtainOpenPct;
+      if (L.curtainColor) state.curtainColor = L.curtainColor;
+    }
+    if (snap.avatar && typeof snap.avatar.x === "number") {
+      state.avatar.x = snap.avatar.x;
+      state.avatar.z = snap.avatar.z;
+      state.avatar.yaw = snap.avatar.yaw || 0;
+    }
+
+    if (rebuild) {
+      buildFloors();
+      buildWallsAndWindows();
+      rebuildAllFurnitureMeshes();
+      updateLightingAndCurtains();
+      updateAvatarAndCamera();
+      updateSelectionVisuals();
+      renderSidebar();
+      saveState();
+    }
+  }
+
+  function saveCustomDesignsToStorage() {
+    try {
+      localStorage.setItem("arribenos_3a_custom_designs_v1", JSON.stringify(state.customDesigns));
+    } catch (e) {}
+  }
+
+  // Inicializar estado desde DATA, LocalStorage o Link Compartido
   function initDataState() {
     DATA.rooms.forEach((r) => {
       state.floors[r.id] = r.defaultFloor || "parquet_herringbone";
@@ -68,11 +163,21 @@
     });
     applyPreset("preset_1", false);
 
-    // Cargar guardado previo si existe (fusionando muebles nuevos del catálogo)
+    // Cargar lista de diseños guardados por el usuario
+    try {
+      const savedList = localStorage.getItem("arribenos_3a_custom_designs_v1");
+      if (savedList) {
+        const parsedList = JSON.parse(savedList);
+        if (Array.isArray(parsedList)) state.customDesigns = parsedList;
+      }
+    } catch (e) {}
+
+    // Cargar último estado de trabajo si existe
     try {
       const saved = localStorage.getItem("arribenos_3a_sim_v2");
       if (saved) {
         const parsed = JSON.parse(saved);
+        if (parsed.currentPreset) state.currentPreset = parsed.currentPreset;
         if (parsed.furniture) Object.assign(state.furniture, parsed.furniture);
         if (parsed.walls) Object.assign(state.walls, parsed.walls);
         if (parsed.floors) Object.assign(state.floors, parsed.floors);
@@ -80,9 +185,31 @@
     } catch (e) {
       console.warn("No se pudo leer LocalStorage:", e);
     }
+
+    // Si la URL trae un diseño compartido (#design=...), cargarlo prioritariamente
+    try {
+      if (window.location.hash && window.location.hash.startsWith("#design=")) {
+        const b64 = decodeURIComponent(window.location.hash.slice("#design=".length));
+        const jsonStr = decodeURIComponent(escape(atob(b64)));
+        const sharedSnap = JSON.parse(jsonStr);
+        applySnapshotObject(sharedSnap, false);
+      }
+    } catch (e) {
+      console.warn("No se pudo decodificar el diseño de la URL:", e);
+    }
   }
 
   function applyPreset(presetKey, rebuild = true) {
+    // 1. Verificar si es uno de los diseños personalizados del usuario
+    const customMatch = state.customDesigns.find((d) => d.id === presetKey);
+    if (customMatch) {
+      state.currentPreset = customMatch.id;
+      applySnapshotObject(customMatch, rebuild);
+      refreshPresetSelectDropdown();
+      return;
+    }
+
+    // 2. Si es uno de los 3 presets originales
     const preset = DATA.presets[presetKey];
     if (!preset) return;
     state.currentPreset = presetKey;
@@ -114,6 +241,7 @@
       rebuildAllFurnitureMeshes();
       updateSelectionVisuals();
       renderSidebar();
+      refreshPresetSelectDropdown();
       saveState();
     }
   }
@@ -123,6 +251,7 @@
       localStorage.setItem(
         "arribenos_3a_sim_v2",
         JSON.stringify({
+          currentPreset: state.currentPreset,
           furniture: state.furniture,
           walls: state.walls,
           floors: state.floors
@@ -2435,6 +2564,267 @@
   }
 
   // ==========================================================================
+  // GESTOR DE MIS DISEÑOS GUARDADOS (GUARDAR, CARGAR, LINK Y EXPORTAR JSON)
+  // ==========================================================================
+  function refreshPresetSelectDropdown() {
+    const sel = document.getElementById("presetSelect");
+    if (!sel) return;
+
+    let html = "";
+    if (state.customDesigns.length > 0) {
+      html += `<optgroup label="⭐ Mis Diseños Guardados (${state.customDesigns.length})">`;
+      state.customDesigns.forEach((d) => {
+        const isSel = state.currentPreset === d.id ? "selected" : "";
+        html += `<option value="${d.id}" ${isSel}>⭐ ${d.name} (${d.updatedAt || ""})</option>`;
+      });
+      html += `</optgroup>`;
+    }
+
+    html += `<optgroup label="📐 Diseños Base (Pre-armados)">
+      <option value="preset_1" ${state.currentPreset === "preset_1" ? "selected" : ""}>Diseño 1 (Rec.): Dormitorio Interno + Oficina al Frente</option>
+      <option value="preset_2" ${state.currentPreset === "preset_2" ? "selected" : ""}>Diseño 2: Dormitorio al Frente + Oficina Interna</option>
+      <option value="preset_3" ${state.currentPreset === "preset_3" ? "selected" : ""}>Diseño 3: Living Invertido + Comedor Integrado</option>
+    </optgroup>`;
+
+    sel.innerHTML = html;
+  }
+
+  function showModalFeedback(msg, isError = false) {
+    const el = document.getElementById("modalFeedbackMsg");
+    if (!el) return;
+    el.style.color = isError ? "var(--danger)" : "var(--success)";
+    el.textContent = msg;
+    setTimeout(() => {
+      if (el.textContent === msg) el.textContent = "";
+    }, 3800);
+  }
+
+  function copyDesignShareLink(snapObj) {
+    try {
+      const jsonStr = JSON.stringify(snapObj);
+      const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+      const url = `${window.location.origin}${window.location.pathname}#design=${encodeURIComponent(b64)}`;
+      navigator.clipboard.writeText(url).then(
+        () => showModalFeedback("✅ ¡Link copiado al portapapeles! Ya podés pegarlo en WhatsApp o abrirlo en otro dispositivo."),
+        () => {
+          window.location.hash = `design=${encodeURIComponent(b64)}`;
+          showModalFeedback("✅ Diseño codificado en la barra de direcciones del navegador.");
+        }
+      );
+    } catch (e) {
+      showModalFeedback("No se pudo generar el link compartido.", true);
+    }
+  }
+
+  function renderSavedDesignsModal() {
+    const listEl = document.getElementById("savedDesignsList");
+    const countEl = document.getElementById("savedDesignsCount");
+    const overwriteRow = document.getElementById("overwriteActiveRow");
+    const activeNameEl = document.getElementById("lblActiveCustomName");
+    const nameInput = document.getElementById("inpNewDesignName");
+
+    if (!listEl) return;
+    countEl.textContent = String(state.customDesigns.length);
+
+    if (!nameInput.value.trim()) {
+      nameInput.value = `Mi Diseño #${state.customDesigns.length + 1}`;
+    }
+
+    const activeCustom = state.customDesigns.find((d) => d.id === state.currentPreset);
+    if (activeCustom && overwriteRow && activeNameEl) {
+      overwriteRow.style.display = "flex";
+      activeNameEl.textContent = activeCustom.name;
+    } else if (overwriteRow) {
+      overwriteRow.style.display = "none";
+    }
+
+    listEl.innerHTML = "";
+    if (state.customDesigns.length === 0) {
+      listEl.innerHTML = `
+        <div style="font-size:12px;color:var(--text-muted);padding:12px;text-align:center;background:var(--bg-dark);border-radius:8px;border:1px dashed var(--border);">
+          Todavía no guardaste ningún diseño propio. Escribí un nombre arriba y tocá <b>"💾 Guardar Nuevo"</b>.
+        </div>
+      `;
+      return;
+    }
+
+    state.customDesigns.forEach((d) => {
+      const isCurrent = state.currentPreset === d.id;
+      const row = document.createElement("div");
+      row.className = `saved-design-item ${isCurrent ? "active-design" : ""}`;
+      row.innerHTML = `
+        <div class="saved-design-meta">
+          <div class="saved-design-title">⭐ ${d.name} ${isCurrent ? '<span style="color:var(--accent);font-size:11px;">(Activo)</span>' : ""}</div>
+          <div class="saved-design-sub">🕒 Guardado: ${d.updatedAt || "Reciente"}</div>
+        </div>
+        <div class="saved-design-actions">
+          <button class="btn btn-sm ${isCurrent ? "btn-primary" : ""} btn-load" title="Cargar este diseño">▶️ Cargar</button>
+          <button class="btn btn-sm btn-update" title="Sobrescribir este diseño con las posiciones y colores actuales">💾 Actualizar</button>
+          <button class="btn btn-sm btn-link" title="Copiar link directo de este diseño">🔗</button>
+          <button class="btn btn-sm btn-del" title="Borrar diseño">🗑️</button>
+        </div>
+      `;
+
+      row.querySelector(".btn-load").onclick = () => {
+        applyPreset(d.id, true);
+        renderSavedDesignsModal();
+        showModalFeedback(`✅ Diseño "${d.name}" cargado en el simulador.`);
+      };
+
+      row.querySelector(".btn-update").onclick = () => {
+        const updated = createSnapshotFromCurrentState(d.name, d.id);
+        const idx = state.customDesigns.findIndex((item) => item.id === d.id);
+        if (idx !== -1) state.customDesigns[idx] = updated;
+        state.currentPreset = d.id;
+        saveCustomDesignsToStorage();
+        saveState();
+        refreshPresetSelectDropdown();
+        renderSavedDesignsModal();
+        showModalFeedback(`💾 Diseño "${d.name}" actualizado con tus cambios actuales.`);
+      };
+
+      row.querySelector(".btn-link").onclick = () => {
+        copyDesignShareLink(d);
+      };
+
+      row.querySelector(".btn-del").onclick = () => {
+        state.customDesigns = state.customDesigns.filter((item) => item.id !== d.id);
+        if (state.currentPreset === d.id) {
+          state.currentPreset = "preset_1";
+        }
+        saveCustomDesignsToStorage();
+        saveState();
+        refreshPresetSelectDropdown();
+        renderSavedDesignsModal();
+        showModalFeedback(`🗑️ Diseño "${d.name}" eliminado.`);
+      };
+
+      listEl.appendChild(row);
+    });
+  }
+
+  function initSavedDesignsUI() {
+    refreshPresetSelectDropdown();
+
+    const modal = document.getElementById("designsModal");
+    const btnOpen = document.getElementById("btnOpenSaveModal");
+    const btnClose = document.getElementById("btnCloseSaveModal");
+    const btnSaveNew = document.getElementById("btnSaveNewDesign");
+    const inpName = document.getElementById("inpNewDesignName");
+    const btnOverwriteActive = document.getElementById("btnOverwriteActiveDesign");
+    const btnCopyLink = document.getElementById("btnCopyShareLink");
+    const btnExportJson = document.getElementById("btnExportDesignsJson");
+    const btnImportJson = document.getElementById("btnImportDesignsJson");
+    const fileImport = document.getElementById("fileImportDesigns");
+
+    if (!modal || !btnOpen) return;
+
+    btnOpen.onclick = () => {
+      inpName.value = `Mi Diseño #${state.customDesigns.length + 1}`;
+      renderSavedDesignsModal();
+      modal.classList.add("active");
+      setTimeout(() => inpName.select(), 60);
+    };
+
+    btnClose.onclick = () => {
+      modal.classList.remove("active");
+    };
+
+    modal.addEventListener("click", (ev) => {
+      if (ev.target === modal) modal.classList.remove("active");
+    });
+
+    function saveNewDesignAction() {
+      const name = inpName.value.trim() || `Mi Diseño #${state.customDesigns.length + 1}`;
+      const snap = createSnapshotFromCurrentState(name);
+      state.customDesigns.unshift(snap);
+      state.currentPreset = snap.id;
+      saveCustomDesignsToStorage();
+      saveState();
+      refreshPresetSelectDropdown();
+      inpName.value = `Mi Diseño #${state.customDesigns.length + 1}`;
+      renderSavedDesignsModal();
+      showModalFeedback(`✅ ¡Diseño "${snap.name}" guardado! Podés elegirlo cuando quieras en el desplegable superior.`);
+    }
+
+    btnSaveNew.onclick = saveNewDesignAction;
+    inpName.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") saveNewDesignAction();
+    });
+
+    if (btnOverwriteActive) {
+      btnOverwriteActive.onclick = () => {
+        const activeCustom = state.customDesigns.find((d) => d.id === state.currentPreset);
+        if (!activeCustom) return;
+        const updated = createSnapshotFromCurrentState(activeCustom.name, activeCustom.id);
+        const idx = state.customDesigns.findIndex((item) => item.id === activeCustom.id);
+        if (idx !== -1) state.customDesigns[idx] = updated;
+        saveCustomDesignsToStorage();
+        saveState();
+        refreshPresetSelectDropdown();
+        renderSavedDesignsModal();
+        showModalFeedback(`💾 Diseño "${activeCustom.name}" actualizado.`);
+      };
+    }
+
+    if (btnCopyLink) {
+      btnCopyLink.onclick = () => {
+        const snap = createSnapshotFromCurrentState("Diseño Compartido");
+        copyDesignShareLink(snap);
+      };
+    }
+
+    if (btnExportJson) {
+      btnExportJson.onclick = () => {
+        const payload = {
+          exportedAt: formatTimestamp(),
+          currentSnapshot: createSnapshotFromCurrentState("Diseño Actual"),
+          customDesigns: state.customDesigns
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.download = `Mis_Disenos_Arribenos_2968_3A.json`;
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        showModalFeedback("⬇️ Archivo .json descargado con todos tus diseños.");
+      };
+    }
+
+    if (btnImportJson && fileImport) {
+      btnImportJson.onclick = () => fileImport.click();
+      fileImport.onchange = (ev) => {
+        const file = ev.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(String(reader.result));
+            if (Array.isArray(data.customDesigns)) {
+              const existingIds = new Set(state.customDesigns.map((d) => d.id));
+              data.customDesigns.forEach((d) => {
+                if (!existingIds.has(d.id)) state.customDesigns.push(d);
+              });
+              saveCustomDesignsToStorage();
+            }
+            if (data.currentSnapshot) {
+              applySnapshotObject(data.currentSnapshot, true);
+            } else if (data.furniture) {
+              applySnapshotObject(data, true);
+            }
+            refreshPresetSelectDropdown();
+            renderSavedDesignsModal();
+            showModalFeedback("✅ Diseños importados correctamente.");
+          } catch (err) {
+            showModalFeedback("❌ El archivo seleccionado no es un JSON válido.", true);
+          }
+        };
+        reader.readAsText(file);
+        fileImport.value = "";
+      };
+    }
+  }
+
+  // ==========================================================================
   // INICIALIZACIÓN DE EVENTOS DE LA INTERFAZ PRINCIPAL
   // ==========================================================================
   window.addEventListener("DOMContentLoaded", () => {
@@ -2443,6 +2833,7 @@
     renderSidebar();
     initPhotoStudioUI();
     initAiRendersGallery();
+    initSavedDesignsUI();
 
     // Pestañas superiores de modo (3D / 2D / Foto Estudio / Renders IA)
     document.querySelectorAll(".mode-btn").forEach((btn) => {
