@@ -586,17 +586,7 @@
             }
           }
 
-          // Marco de puerta
-          if (op.type === "door" && maxH > 0.4) {
-            const doorH = Math.min(op.y1, maxH);
-            const panel = new THREE.Mesh(
-              new THREE.BoxGeometry(opLen * 0.9, doorH * 0.96, 0.035),
-              new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.65 })
-            );
-            panel.position.set(op.start + 0.04, doorH / 2, opLen * 0.44);
-            panel.rotation.y = Math.PI / 1.92; // Puerta abierta a 94° para dejar libre el paso en 1° persona
-            singleWallGroup.add(panel);
-          }
+          // Abertura de puerta limpia (sin hoja de puerta para liberar las paredes y el paso)
 
           cursor = op.end;
         });
