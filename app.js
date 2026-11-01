@@ -552,8 +552,8 @@
             singleWallGroup.add(bot);
           }
 
-          // Dintel superior sobre puerta/ventana
-          if (maxH > op.y1) {
+          // Dintel superior solo sobre ventanas (las puertas quedan abiertas de piso a techo)
+          if (op.type !== "door" && maxH > op.y1) {
             const hTop = maxH - op.y1;
             const top = new THREE.Mesh(new THREE.BoxGeometry(opLen, hTop, thick), mat);
             top.position.set(opMid, op.y1 + hTop / 2, 0);
